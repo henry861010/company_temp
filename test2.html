@@ -1,0 +1,81 @@
+
+<script>
+/*
+    this snippeg not work to dectect the changes in the wysiwyg edit mode. 
+    it can dectect the "changes saved" tage at the buttom right.
+
+    * a MutationObserver with "subtree: true" will not observe changes inside an 
+    iframe's document tree, even if the iframe is a descendant of the observed node. 
+    The iframe's content (its document tree) is considered a separate context, and 
+    MutationObserver does not automatically propagate into the iframe.
+*/
+window.onload = function() {
+    const observerConfig = { childList: true, subtree: true, characterData: true };
+    let observeElement = document.getElementById("createpageform");
+
+    const observer = new MutationObserver((mutationsList) => {
+        console.log("aaaaa"+mutationsList.length);
+        mutationsList.forEach((mutation) => {
+            // Check if the mutation belongs to a specific ancestor node by ID
+            console.log("Mutation type:", mutation.type);
+            if (mutation.type === "childList") {
+                console.log("Added nodes:", mutation.addedNodes);
+                console.log("Removed nodes:", mutation.removedNodes);
+            }
+            const specificAncestor = mutation.target.closest('[data-macro-name="test"]');
+            console.log("@@@@@@@@");
+            if (specificAncestor) {
+                observer.disconnect();
+                console.log("~~~~~~~~~~~~");
+                observer.observe(observeElement, observerConfig);
+            }
+        });
+    });
+    
+    if(observeElement) {
+        observer.observe(observeElement, observerConfig);
+    }
+}
+</script>
+
+<script>
+    /*
+        once the iframe be loaed, it would store in the dom tree forever?
+        yes -> this code, "contentObserver" try to find the iframe firstly. if find it, close 
+        "contentObserver" and open new observer "wysiwygObserver" which obser the "user macro"<div>
+        
+            * fail !!!
+    */
+    window.onload = function() {
+        const observerConfig = { childList: true, subtree: true, characterData: true };
+        let observeElement = document.getElementById("content");
+        let userMacroElement = null;
+
+        const wysiwygObserver = new MutationObserver((mutationsList) => {
+            console.log("~~~ the wysiwyg edited");
+        });
+    
+        const contentObserver = new MutationObserver((mutationsList) => {
+            let iframe = document.getElementById("wysiwygTextarea_ifr");    
+            if(iframe) {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                if(iframeDoc) {
+                    console.log("~~~~ find the iframeDoc");
+                } else {
+                    console.log("~~~~ there is no iframeDoc");
+                }
+                userMacroElement = iframeDoc.querySelector('[data-macro-name="test"]');
+                if(userMacroElement) {
+                    console.log("~~~~ find the userMacroElement");
+                    wysiwygObserver.observe(userMacroElement, observerConfig);
+                    contentObserver.disconnect();
+                } else {
+                    console.log("~~~~ there is no userMacroElement");
+                }
+            } else {
+                console.log("~~ there is no iframe");
+            }
+        });
+        contentObserver.observe(observeElement, observerConfig);
+    }
+</script>

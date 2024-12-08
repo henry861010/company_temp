@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parent Page</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f9f9f9;
+            padding: 20px;
+        }
+        iframe {
+            border: 2px solid #6200ea;
+            width: 100%;
+            height: 300px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Parent Page</h1>
+<p>This is the parent page. Below is an iframe embedding a child page:</p>
+
+<iframe id="myFrame" src="child.html" title="Child Page"></iframe>
+
+<p id="p2">You can interact with the content in the iframe!</p>
+
+</body>
+</html>
+
+<script>
+    console.log("--test 1");
+    window.onload = function() {
+        console.log("--test 2");
+        let iframe = document.getElementById("myFrame");
+        console.log("--test 3");
+        if(iframe) {
+            console.log("find the iframe");
+        } else {
+            console.log("there is no iframe");
+        }
+    }
+</script>
