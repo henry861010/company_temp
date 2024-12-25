@@ -1,0 +1,82 @@
+<script>
+    /*
+        once "id=content" is changed, the callback function identity if there is the wysiwyg 
+        editor and user macro("test"). if there is 
+    */
+    function getUserMacroElement() {
+        let userMacroElement = document.querySelector('[data-macro-name="test"]');
+        if (!userMacroElement) {
+            const iframe = document.getElementById("wysiwygTextarea_ifr");
+
+            if (iframe) {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                userMacroElement = iframeDoc.querySelector('[data-macro-name="test"]');
+            }
+        }
+        return userMacroElement;
+    }
+
+    function check(tableElement) {
+        let rows = tableElement.querySelectorAll("tr");
+        rows.forEach((row) => {
+            let cells = row.querySelectorAll("td");
+            cells.forEach((cell) => {
+                let tagElement = cell.querySelector("div");
+                let seletorElement = cell.querySelector("select");
+                if (!tagElement) {
+                    tagElement = document.createElement("div");
+                    cell.appendChild(tagElement);
+                }
+                if (!seletorElement) {
+                    seletorElement = document.createElement("select");
+
+                    options = [
+                        "a",
+                        "b",
+                        "c"
+                    ]
+
+                    options.forEach(optionText => {
+                        const option = document.createElement('option');
+                        option.value = optionText.toLowerCase().replace(' ', '_'); // Set the value attribute
+                        option.textContent = optionText; // Set the visible text
+                        seletorElement.appendChild(option); // Add <option> to <select>
+                    });
+                    cell.appendChild(seletorElement);
+                }
+                if (options.includes(tagElement.textContent)) {
+                    seletorElement.value = tagElement.textContent;
+                } else {
+                    seletorElement.value = options[0];
+                    tagElement.textContent = options[0];
+                }
+
+                seletorElement.addEventListener('change', (event) => {
+                    tagElement.textContent = seletorElement.value;
+                });
+            });
+        });
+    }
+
+    window.onload = function () {
+        const observerConfig = { childList: true, subtree: true, characterData: true };
+        let observeElement = document.getElementById("content");
+        console.log("~~~~~~~~~");
+
+        const observer = new MutationObserver((mutationsList) => {
+            let userMacroElement = getUserMacroElement();
+            if (userMacroElement) {
+                const table = userMacroElement.querySelector('.confluenceTable');
+                if (table) {
+                    observer.disconnect();
+                    check(table);
+                    observer.observe(observeElement, observerConfig);
+                }
+            }
+        });
+
+        if (observeElement) {
+            observer.observe(observeElement, observerConfig);
+        }
+    }
+</script>

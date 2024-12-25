@@ -1,0 +1,13 @@
+
+<script>
+window.onload = function() {
+    console.log("~~~~~~~~~~~~~~~~~");
+    console.log('Token1:', document.cookie);
+
+    const token2 = sessionStorage.getItem('auth_token');
+    console.log('Token2:', token2);
+
+    const token3 = localStorage.getItem('auth_token');
+    console.log('Token3:', token3);
+}
+</script>
