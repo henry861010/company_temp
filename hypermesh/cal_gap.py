@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
 
 def cal_gap(gap, dim_list):
@@ -79,20 +81,20 @@ def cal_gap(gap, dim_list):
                             section_type[i][k] = 2
 
                 ### add the lose one (only in x-axis ???)
-                if section_type[i][j] == 2:
-                    left = i - 1
-                    while 1:
-                        if left<0:
-                            left = -1
-                            break
-                        elif section_type[left][j]:
-                            left += 1
-                            break
-                        else:
-                            left -= 1
-                    if left != -1 and table_x_dim[i] - table_x_dim[left] <= gap:
-                        for k in range(left, i):
-                            section_type[k][j] = 2
+            if section_type[i][j] == 2:
+                left = i - 1
+                while 1:
+                    if left<0:
+                        left = -1
+                        break
+                    elif section_type[left][j]:
+                        left += 1
+                        break
+                    else:
+                        left -= 1
+                if left != -1 and table_x_dim[i] - table_x_dim[left] <= gap:
+                    for k in range(left, i):
+                        section_type[k][j] = 2
                     
                 
 
@@ -120,9 +122,35 @@ def print_dim(dim_list):
         print(f"[{dim[1]} {dim[3]}]",end=" ")
     print("")
 
-gap = 4
-#dim_list = [[0, 0, 2, 2], [3, 0, 5, 2], [6, 0, 8, 2], [16, 0, 18, 2]]
-dim_list = [[0, 0, 1, 6], [6, 0, 8, 2], [4, 5, 8, 6]]
+#gap = 3
+#dim_list = [[0, 0, 1, 6], [6, 0, 8, 2], [4, 4, 8, 6]]
+gap = 5
+dim_list = [[0, 0, 1, 2], [0, 3, 2, 9], [5, 0, 7, 1], [5, 7, 7, 9]]
 print_dim(dim_list)
-a = cal_gap(gap, dim_list)
-print_dim(a)
+gap_dim_list = cal_gap(gap, dim_list)
+print_dim(gap_dim_list)
+
+
+# Create figure and axis
+fig, ax = plt.subplots()
+
+# Background (white)
+ax.set_facecolor("white")
+
+# Draw the rectangles
+max_x = 0
+max_y = 0
+for dim in dim_list:
+    rect = patches.Rectangle((dim[0], dim[1]), dim[2]-dim[0], dim[3]-dim[1], color="black")
+    ax.add_patch(rect)
+    max_x = max(max_x, dim[2])
+    max_y = max(max_y, dim[3])
+for dim in gap_dim_list:
+    rect = patches.Rectangle((dim[0], dim[1]), dim[2]-dim[0], dim[3]-dim[1], color="blue")
+    ax.add_patch(rect)
+
+# Set plot limits based on rectangle positions
+ax.set_xlim(0, max_x)
+ax.set_ylim(0, max_y)
+
+plt.show()
