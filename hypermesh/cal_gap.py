@@ -80,7 +80,7 @@ def cal_gap(gap, dim_list):
                         for k in range(j, upper):
                             section_type[i][k] = 2
 
-                ### add the lose one (only in x-axis ???)
+            ### add the lose one (only in x-axis ???)
             if section_type[i][j] == 2:
                 left = i - 1
                 while 1:
@@ -124,11 +124,12 @@ def print_dim(dim_list):
 
 #gap = 3
 #dim_list = [[0, 0, 1, 6], [6, 0, 8, 2], [4, 4, 8, 6]]
-gap = 5
+gap = 6
 dim_list = [[0, 0, 1, 2], [0, 3, 2, 9], [5, 0, 7, 1], [5, 7, 7, 9]]
 print_dim(dim_list)
 gap_dim_list = cal_gap(gap, dim_list)
-print_dim(gap_dim_list)
+#print_dim(gap_dim_list)
+print(gap_dim_list)
 
 
 # Create figure and axis
