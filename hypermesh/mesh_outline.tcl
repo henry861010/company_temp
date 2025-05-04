@@ -557,3 +557,345 @@ proc next_index {
     }
 }
 
+# ---------------------- 4/26
+
+### require length of the edge1 and edge3 is the same (set the additional check at the expanding predict step which check and add the reference node for expanding result)
+proc build_sameSize {
+    edge1
+    edge2
+    edge3
+    edge4
+} {
+
+}
+
+
+
+### get the maximum allowed expand length of the line with given direction
+### param:
+###     1. patternLine_list_x: sorted patternLine with x-axis
+###     2. patternLine_list_y: sorted patternLine with y-axis
+###     3. outline: the target expanding outline
+###         * [list NODE1 NODE2 Direction]
+###     4. target_size: the target element size for this expanding
+### return:
+###     * expand: maximum allowed expanding
+###         * [list EXPAND_X EXPAND_Y]
+proc build_buffer_area {
+    patternLine_list_x
+    patternLine_list_y
+    outline
+    target_size
+} {
+
+}
+
+### ------------------------ 5/4 ---------------
+proc build_corners {
+    expanding_list
+    outline_list
+} {
+    set len [llength $outline_list]
+    set index 0
+
+    set corner_list [list ]
+
+    while {$index < $len} {
+        set index_pre [expr ($len + $index - 1) % $len]
+        set outline_pre [lindex $outline_list $index_pre]
+        set nodeList_pre [lindex $index_pre 0]
+        set direction_pre [lindex $index_pre 1]
+        set len_pre [distance [lindex $nodeList_pre 0] [lindex $nodeList_pre end]]
+        set expanding_pre [lindex $expanding_list $index_pre]
+        set expanding_pre_v [expr abs([lindex $expanding_pre 0]) + abs([lindex $expanding_pre 1])]
+
+        set index_now $index
+        set outline_now [lindex $outline_list $index_now]
+        set nodeList_now [lindex $index_now 0]
+        set direction_now [lindex $index_now 1]
+        set len_now [distance [lindex $nodeList_now 0] [lindex $nodeList_now end]]
+        set expanding_now [lindex $expanding_list $index_now]
+        set expanding_now_v [expr abs([lindex $expanding_now 0]) + abs([lindex $expanding_now 1])]
+
+        set index_post [expr ($len + $index + 1) % $len]
+        set outline_post [lindex $outline_list $index_post]
+        set nodeList_post [lindex $index_post 0]
+        set direction_post [lindex $index_post 1]
+        set len_post [distance [lindex $nodeList_post 0] [lindex $nodeList_post end]]
+        set expanding_post [lindex $expanding_list $index_post]
+        set expanding_post_v [expr abs([lindex $expanding_post 0]) + abs([lindex $expanding_post 1])]
+
+        ### the first/second corner type
+        set direction_270degree [list [expr -[lindex $direction_now 1]] [expr [lindex $direction_now 0]]]
+        set direction_90degree [list [expr [lindex $direction_now 1]] [expr -[lindex $direction_now 0]]]
+        if {[lindex $direction_pre 0] == [lindex $direction_90degree 0] && [lindex $direction_pre 1] == [lindex $direction_90degree 1]} {
+            set ifFirstInner 1
+        } else {
+            set ifFirstInner 0
+        }
+        if {[lindex $direction_post 0] == [lindex $direction_270degree 0] && [lindex $direction_post 1] == [lindex $direction_270degree 1]} {
+            set ifSecondInner 1
+        } else {
+            set ifSecondInner 0
+        }
+
+        ### build the corner
+        if {[lindex $expanding_now 0] == 0 && [lindex $expanding_now 1] == 0} {
+            ### append the dummy list
+            lappend corner_list [list ]
+
+            incr index 1
+        } elseif {$ifFirstInner && [if_equal_float $expanding_pre_v $len_now]} {
+            ### build the first corner
+            set node1_x [lindex [$nodeList_now 0] 0]
+            set node1_y [lindex [$nodeList_now 0] 1]
+            set node3_x [expr $node1_x + [lindex $expanding_pre 0] + [lindex $expanding_now 0]]
+            set node3_y [expr $node1_y + [lindex $expanding_pre 1] + [lindex $expanding_now 1]]
+            set nodeList_index_pre [find_next ???]
+
+            set edge1 [lreverse [lrange $nodeList_pre $nodeList_index_pre end]]
+            set edge2 [list [lindex $nodeList_pre $nodeList_index_pre] [list $node3_x $node3_y]]
+            set edge3 [list [lindex $nodeList_now end] [list $node3_x $node3_y]]
+            set edge4 $nodeList_now
+
+            set first_corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### build the second corner
+            set node4_x [lindex [$nodeList_now end] 0]
+            set node4_y [lindex [$nodeList_now end] 1]
+            set node1_x [expr $node4_x + [lindex $expanding_now 0]]
+            set node1_y [expr $node4_y + [lindex $expanding_now 1]]
+            set node2_x [expr $node4_x + [lindex $expanding_post 0] + [lindex $expanding_now 0]]
+            set node2_y [expr $node4_y + [lindex $expanding_post 1] + [lindex $expanding_now 1]]
+            set node3_x [expr $node4_x + [lindex $expanding_post 0]]
+            set node3_y [expr $node4_y + [lindex $expanding_post 1]]
+
+            set edge1 [list [list $node1_x $node1_y] [list $node2_x $node2_y]]
+            set edge2 [list [list $node2_x $node2_y] [list $node3_x $node3_y]]
+            set edge4 [lreverse [lindex $first_corner 2]]
+            if {[llength $edge4] % 2} {
+                set edge3 [list [list $node4_x $node4_y] [list [expr double($node4_x + $node3_x) / 2] [expr double($node4_y + $node3_y) / 2]] [list $node3_x $node3_y]]
+            } else {
+                set edge3 [list [list $node4_x $node4_y] [list $node3_x $node3_y]]
+            }
+
+            set second_corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### append the new corner
+            lappend corner_list $first_corner
+            lappend corner_list $second_corner
+
+            incr index 2
+        } elseif {$ifSecondInner && [if_equal_float $expanding_post_v $len_now]} {
+            ### build the first corner
+            set node1_x [lindex [$nodeList_now end] 0]
+            set node1_y [lindex [$nodeList_now end] 1]
+            set node3_x [expr $node1_x + [lindex $expanding_post 0] + [lindex $expanding_now 0]]
+            set node3_y [expr $node1_y + [lindex $expanding_post 1] + [lindex $expanding_now 1]]
+            set nodeList_index_post [find_next ???]
+
+            set edge1 [lreverse $nodeList_now]
+            set edge2 [list [lindex $nodeList_now 0] [list $node3_x $node3_y]]
+            set edge3 [list [lindex $nodeList_post $nodeList_index_post] [list $node3_x $node3_y]]
+            set edge4 [lrange $nodeList_post 0 $nodeList_index_post]
+
+            set second_corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### build the second corner
+            set node4_x [lindex [$nodeList_now 0] 0]
+            set node4_y [lindex [$nodeList_now 0] 1]
+            set node1_x [expr $node4_x + [lindex $expanding_pre 0]]
+            set node1_y [expr $node4_y + [lindex $expanding_pre 1]]
+            set node2_x [expr $node4_x + [lindex $expanding_pre 0] + [lindex $expanding_now 0]]
+            set node2_y [expr $node4_y + [lindex $expanding_pre 1] + [lindex $expanding_now 1]]
+            set node3_x [expr $node1_x + [lindex $expanding_now 0]]
+            set node3_y [expr $node1_y + [lindex $expanding_now 1]]
+
+            set edge1 [list [list $node1_x $node1_y] [list $node2_x $node2_y]]
+            set edge2 [list [list $node2_x $node2_y] [list $node3_x $node3_y]]
+            set edge3 [lindex $second_corner 1]
+            if {[llength $edge3] % 2} {
+                set edge4 [list [list $node1_x $node1_y] [list [expr double($node1_x + $node4_x) / 2] [expr double($node1_y + $node4_y) / 2]] [list $node4_x $node4_y]]
+            } else {
+                set edge4 [list [list $node1_x $node1_y] [list $node4_x $node4_y]]
+            }
+
+            set first_corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### append the new corner
+            lappend corner_list $first_corner
+            lappend corner_list $second_corner
+
+            incr index 2
+        } elseif {$ifFirstInner} {
+            ### inner corner
+            set node1_x [lindex [$nodeList_now 0] 0]
+            set node1_y [lindex [$nodeList_now 0] 1]
+            set node3_x [expr $node1_x + [lindex $expanding_pre 0] + [lindex $expanding_now 0]]
+            set node3_y [expr $node1_y + [lindex $expanding_pre 1] + [lindex $expanding_now 1]]
+
+            set nodeList_index_pre [find_next ???]
+            set nodeList_index_now [find_next ???]
+
+            set edge1 [lreverse [lrange $nodeList_pre $nodeList_index_pre end]]
+            set edge2 [list [lindex $nodeList_pre $nodeList_index_pre] [list $node3_x $node3_y]]
+            set edge3 [list [lindex $nodeList_now $nodeList_index_now] [list $node3_x $node3_y]]
+            set edge4 [lrange $nodeList_now 0 $nodeList_index_now]
+
+            set corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### append the new corner
+            lappend corner_list $corner
+
+            incr index 1
+        } elseif {!$ifFirstInner} {
+            ### outer corner
+            set node4_x [lindex [$nodeList_now 0] 0]
+            set node4_y [lindex [$nodeList_now 0] 1]
+            set node1_x [expr $node4_x + [lindex $expanding_pre 0]]
+            set node1_y [expr $node4_y + [lindex $expanding_pre 1]]
+            set node2_x [expr $node4_x + [lindex $expanding_pre 0] + [lindex $expanding_now 0]]
+            set node2_y [expr $node4_y + [lindex $expanding_pre 1] + [lindex $expanding_now 1]]
+            set node3_x [expr $node1_x + [lindex $expanding_now 0]]
+            set node3_y [expr $node1_y + [lindex $expanding_now 1]]
+
+            set edge1 [list [list $node1_x $node1_y] [list $node2_x $node2_y]]
+            set edge2 [list [list $node2_x $node2_y] [list $node3_x $node3_y]]
+            set edge3 [list [list $node4_x $node4_y] [list $node3_x $node3_y]]
+            set edge4 [list [list $node1_x $node1_y] [list $node4_x $node4_y]]
+
+            set corner [build build_x_1_1_y $edge1 $edge2 $edge3 $edge4]
+
+            ### append the new corner
+            lappend corner_list $corner
+
+            incr index 1
+        } else {
+            ERROR !!!
+        }
+    }
+
+    return $corner_list
+}
+
+proc build_lines {
+    expanding_list
+    outline_list
+    corner_list
+} {
+    set result_list [list ]
+
+    set len [llength $corner_list]
+    set index 0
+
+    while {$index < $len} {
+        set outer_node_list [list ]
+
+        ### find the first
+        set index_first $index
+        set first_corner [lindex $corner_list $index_first]
+        while {[llength $first_corner] == 0} {
+            set index_first [expr ($len + $index - 1) % $len]
+            set first_corner [lindex $corner_list $index_first]
+        }
+        set edge1 [lindex $first_corner 2]
+
+        ### add the first corner outer_node_list
+        set direction_pre [lindex [lindex $outline_list [expr ($len + $index_first - 1) % $len]] 1]
+        set direction_now [lindex [lindex $outline_list $index_first] 1]
+        set direction_270degree [list [expr -[lindex $direction_now 1]] [expr [lindex $direction_now 0]]]
+        if {[lindex $direction_270degree 0] == [lindex $direction_pre 0] && [lindex $direction_270degree 1] == [lindex $direction_pre 1]} {
+            lappend outer_node_list [lindex $first_corner 1]
+        }
+
+        set index_second [expr ($len + $index_first + 1) % $len]
+        set second_corner [lindex $corner_list $index_second]
+        while {[llength $second_corner] == 0} {
+            set outline_pre [lindex $outline_list [expr ($len + $index_second - 1) % $len]]
+            set direction_pre [lindex $outline_pre 1]
+            set nodeList_pre [lindex $outline_pre 0]
+            set outline_now [lindex $outline_list $index_second]
+            set nodeList_now [lindex $outline_now 0]
+            set direction_now [lindex $outline_now 1]
+            set direction_270degree [list [expr -[lindex $direction_now 1]] [expr [lindex $direction_now 0]]]
+            set direction_90degree [list [expr [lindex $direction_now 1]] [expr -[lindex $direction_now 0]]]
+            if {[lindex $direction_270degree 0] == [lindex $direction_pre 0] && [lindex $direction_270degree 1] == [lindex $direction_pre 1]} {
+                ### shallow to deep
+                set expanding_pre [lindex $expanding_list [expr ($len + $index_second - 1) % $len]]
+                set node4_x [lindex [lindex $nodeList_now 0] 0]
+                set node4_y [lindex [lindex $nodeList_now 0] 1]
+                set node3_x [expr $node4_x + [lindex $expanding_pre 0]]
+                set node3_y [expr $node4_y + [lindex $expanding_pre 1]]
+
+                set edge3 [list [list $node4_x $node4_y] [list $node3_x $node3_y]]
+                set next_edge1 [lappend [lreverse $nodeList_now] [list $node3_x $node3_y]]
+            } elseif {[lindex $direction_90degree 0] == [lindex $direction_pre 0] && [lindex $direction_90degree 1] == [lindex $direction_pre 1]} {
+                ### deep to shallow
+                set expanding_post[lindex $expanding_list [expr ($len + $index_second + 1) % $len]]
+                set node4_x [lindex [lindex $nodeList_now end] 0]
+                set node4_y [lindex [lindex $nodeList_now end] 1]
+                set node3_x [expr $node4_x + [lindex $expanding_post 0]]
+                set node3_y [expr $node4_y + [lindex $expanding_post 1]]
+
+                set next_edge1 [list [list $node4_x $node4_y] [list $node3_x $node3_y]]
+                set edge3 [lappend $nodeList_now [list $node3_x $node3_y]]
+            } else {
+                ERROR !!!
+            }
+
+            set edge4 $nodeList_pre
+            set edge2 [list [lindex $edge1 end] [lindex $edge3 end]]
+
+            set outline [build_patternLine $edge1 $edge2 $edge3 $edge4 ??? ???]
+            if {[llength $outer_node_list] == 0} {
+                lappend outer_node_list $outline
+            } else {
+                lappend outer_node_list [lrange $outline 1 end]
+            }
+
+            set index_second [expr ($len + $index_second + 2) % $len]
+            set second_corner [lindex $corner_list $index_second]
+            set edge1 $next_edge1
+        }
+
+        ### determine the second corner is outer/inner corner
+        set outline_pre [lindex $outline_list [expr ($len + $index_second - 1) % $len]]
+        set direction_pre [lindex $outline_pre 1]
+        set nodeList_pre [lindex $outline_pre 0]
+        set outline_now [lindex $outline_list $index_second]
+        set direction_now [lindex $outline_now 1]
+        set direction_270degree [list [expr -[lindex $direction_now 1]] [expr [lindex $direction_now 0]]]
+        if {[lindex $direction_270degree 0] == [lindex $direction_pre 0] && [lindex $direction_270degree 1] == [lindex $direction_pre 1]} {
+            ### inner corner
+            set edge3 [lindex $second_corner 1]
+        } else {
+            ### outer corner
+            set edge3 [lreverse [lindex $second_corner 3]]
+        }
+
+        ### the last section line
+        set edge2 [list [lindex $edge1 end] [lindex $edge3 end]]
+        set edge4 $nodeList_pre
+
+        set outline [build_patternLine $edge1 $edge2 $edge3 $edge4 ??? ???]
+        if {[llength $outer_node_list] == 0} {
+            lappend outer_node_list $outline
+        } else {
+            lappend outer_node_list [lrange $outline 1 end]
+        }
+
+        ### add the last node list of the corner
+        if {!([lindex $direction_270degree 0] == [lindex $direction_pre 0] && [lindex $direction_270degree 1] == [lindex $direction_pre 1])} {
+            ### outer corner
+            if {[llength $outer_node_list] == 0} {
+                lappend outer_node_list [lindex $second_corner 0]
+            } else {
+                lappend outer_node_list [lrange [lindex $second_corner 0] 1 end]
+            }
+        }
+
+        lappend result_list $outer_node_list
+        set index $index_second
+    }
+    return $result_list
+}
