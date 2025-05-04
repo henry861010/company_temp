@@ -843,7 +843,8 @@ proc build_lines {
                 ERROR !!!
             }
 
-            set edge4 $nodeList_pre
+            set edge4_begin [find_next $nodeList_pre [lindex $edge1 0]]
+            set edge4 [lrange $nodeList_pre $edge4_begin end]
             set edge2 [list [lindex $edge1 end] [lindex $edge3 end]]
 
             set outline [build_patternLine $edge1 $edge2 $edge3 $edge4 ??? ???]
@@ -874,8 +875,10 @@ proc build_lines {
         }
 
         ### the last section line
+        set edge4_begin [find_next $nodeList_pre [lindex $edge1 0]]
+        set edge4_end [find_next $nodeList_pre [lindex $edge3 0]]
+        set edge4 [lrange $nodeList_pre $edge4_begin $edge4_end]
         set edge2 [list [lindex $edge1 end] [lindex $edge3 end]]
-        set edge4 $nodeList_pre
 
         set outline [build_patternLine $edge1 $edge2 $edge3 $edge4 ??? ???]
         if {[llength $outer_node_list] == 0} {
