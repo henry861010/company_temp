@@ -60,19 +60,20 @@ def get_dram_info(model, config):
     dram_molding_material = find_key_recursive(substrate_layer_list, "???dram_molding")
     dram_pm_material = find_key_recursive(substrate_layer_list, "???dram_pm")
     die_dram_material = find_key_recursive(substrate_layer_list, "???die_dram")
-    for core_layer in core_layer_list:
+    for i in range(len(core_layer_list)):
+        core_layer = core_layer_list[i]
         dram_pm_thk = core_layer["dram_pm_thk"]
         die_dram_thk = core_layer["die_dram_thk"]
     
-        bias1_x = find_key_recursive(core_layer_list, "???bias1_x")
-        bias1_y = find_key_recursive(core_layer_list, "???bias1_y")
-        bias3_x = find_key_recursive(core_layer_list, "???bias3_x")
-        bias3_y = find_key_recursive(core_layer_list, "???bias3_y")
+        expand1_x = find_key_recursive(core_layer_list, "???expand1_x")
+        expand1_y = find_key_recursive(core_layer_list, "???expand1_y")
+        expand3_x = find_key_recursive(core_layer_list, "???expand3_x")
+        expand3_y = find_key_recursive(core_layer_list, "???expand3_y")
         
-        core1_x = base1_x - bias1_x
-        core1_y = base1_y - bias1_y
-        core3_x = base3_x + bias3_x
-        core3_y = base3_y + bias3_y
+        core1_x = base1_x - expand1_x
+        core1_y = base1_y - expand1_y
+        core3_x = base3_x + expand3_x
+        core3_y = base3_y + expand3_y
         core_dim = [core1_x, core1_y, core3_x, core3_y]
         
         ### pm
