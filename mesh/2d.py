@@ -9,11 +9,15 @@ class CDB:
         self.nodes = [] ### [[x, y], ... ]
         self.node_map = {}
         
+        ### additional info
+        self.pattern_lines = []
+        
     def reset(self):
         self.components = []
         self.elements = []
         self.nodes = []
-        self.node_map = {}    
+        self.node_map = {}   
+        self.pattern_lines = [] 
 
     def add_node(self, x: float, y: float):
         node_key = f"{x}-{y}"
@@ -31,7 +35,11 @@ class CDB:
         element_id = len(self.elements) - 1
         return element_id
     
+    def add_pattern_line(self, line: list):
+        self.pattern_lines = self.pattern_lines + line
+    
     def show_graph(self, title: str = "2D mesh"):
+        ### show the element
         for element in self.elements:
             node1 = self.nodes[element[1]]
             node2 = self.nodes[element[2]]
@@ -41,6 +49,13 @@ class CDB:
             plt.plot([node2[0], node3[0]], [node2[1], node3[1]], color='black')
             plt.plot([node3[0], node4[0]], [node3[1], node4[1]], color='black')
             plt.plot([node4[0], node1[0]], [node4[1], node1[1]], color='black')
+            
+        ### show the pattern line
+        for line in self.pattern_lines:
+            node1 = line[0]
+            node2 = line[-1]
+            plt.plot([node1[0], node2[0]], [node1[1], node2[1]], color='blue', linewidth=0.5)
+            
         plt.gca().set_aspect('equal')
         plt.grid(True)
         plt.title(f"{title}")
@@ -486,31 +501,59 @@ def build_block(cdb_obj: 'CDB', element_size: int ,edge1: list, edge2: list, edg
             target_section_num += 1
         else:
             target_section_num -= 1
-    v_x = (edge2[-1][0] - edge2[0][0]) / target_section_num
-    v_y = (edge2[-1][1] - edge2[0][1]) / target_section_num
     
-    ### build the section
-    new_edge2 = [edge2[0]]
-    for i in range(target_section_num):
-        new_edge2.append([new_edge2[-1][0]+v_x, new_edge2[-1][1]+v_y])
+    ### determine the outer node
+    ### there are several reference node at the edge, we should consider it while we mesh.
+    ### we call the distance between the reference node are "bucket"
+    ###     * bucket_num: the number of the section in it
+    ###     * bucket_dis: the distance of the bucket
+    bucket_num = []
+    bucket_dis = []
+    for i in range(1, len(edge2)):
+        bucket_num.append(1)
+        bucket_dis.append(distance(edge2[i-1], edge2[i]))
     
+    for i in range(len(edge2)-1, target_section_num):
+        ### find the bucket where each section in it have maximum len
+        max_len = -1
+        max_index = -1
+        for j in range(len(bucket_dis)):
+            temp_len = bucket_dis[j] / (bucket_num[j] + 1)
+            if temp_len > max_len:
+                max_len = temp_len
+                max_index = j
+
+        ### find it and add the section to this found bucket
+        bucket_num[max_index] = bucket_num[max_index] + 1
+    
+    new_edge2 = []
+    for i in range(0, len(bucket_num)):
+        v_x = (edge2[i+1][0] - edge2[i][0]) / bucket_num[i]
+        v_y = (edge2[i+1][1] - edge2[i][1]) / bucket_num[i]
+        temp = [edge2[i]]
+        for _ in range(bucket_num[i]):
+            temp.append([temp[-1][0]+v_x, temp[-1][1]+v_y])
+
+        new_edge2 = new_edge2[:-1] + temp
+
     ### build the unit 
     left_index = 0
-    left_node = [edge2[0][0], edge2[0][1]]
+    left_outer_index = 0
     left_edge = edge1
     
     right_index = len(edge4) - 1
-    right_node = [edge2[-1][0], edge2[-1][1]]
+    right_outer_index = len(new_edge2) - 1
     right_edge = edge3
     
     while True:
         ### build the left unit
-        next_left_node = [left_node[0] + v_x, left_node[1] + v_y]
-        next_left_index = next_index(next_left_node, edge4, left_index, len(left_edge)-1, 1)
+        now_node = new_edge2[left_outer_index]
+        next_node = new_edge2[left_outer_index + 1]
+        next_left_index = next_index(next_node, edge4, left_index, len(left_edge)-1, 1)
         
         temp_edge1 = left_edge
-        temp_edge2 = [left_node, next_left_node]
-        temp_edge3 = [edge4[next_left_index], next_left_node]
+        temp_edge2 = [now_node, next_node]
+        temp_edge3 = [edge4[next_left_index], next_node]
         temp_edge4 = edge4[left_index : next_left_index+1]
         
         ### build
@@ -518,7 +561,7 @@ def build_block(cdb_obj: 'CDB', element_size: int ,edge1: list, edge2: list, edg
 
         ### update the temp var
         left_index = next_left_index
-        left_node = next_left_node
+        left_outer_index = left_outer_index + 1
         left_edge = temp_edge3
         
         ### if finish got out from the while loop
@@ -526,12 +569,13 @@ def build_block(cdb_obj: 'CDB', element_size: int ,edge1: list, edge2: list, edg
             break
         
         ### build the left unit
-        next_right_node = [right_node[0] - v_x, right_node[1] - v_y]
-        next_right_index = next_index(next_right_node, edge4, right_index, len(right_edge)-1, -1)
+        now_node = new_edge2[right_outer_index]
+        next_node = new_edge2[right_outer_index - 1]
+        next_right_index = next_index(next_node, edge4, right_index, len(right_edge)-1, -1)
         
         temp_edge3 = right_edge
-        temp_edge2 = [next_right_node, right_node]
-        temp_edge1 = [edge4[next_right_index], next_right_node]
+        temp_edge2 = [next_node, now_node]
+        temp_edge1 = [edge4[next_right_index], next_node]
         temp_edge4 = edge4[next_right_index : right_index+1]
                 
         ### build
@@ -539,7 +583,7 @@ def build_block(cdb_obj: 'CDB', element_size: int ,edge1: list, edge2: list, edg
         
         ### update the temp var
         right_index = next_right_index
-        right_node = next_right_node
+        right_outer_index = right_outer_index - 1
         right_edge = temp_edge3
 
         if left_index == right_index: 
@@ -552,12 +596,6 @@ def build_block(cdb_obj: 'CDB', element_size: int ,edge1: list, edge2: list, edg
         origin_edge4 = new_edge2[::-1]
     elif max_len == len(origin_edge3):
         origin_edge1 = new_edge2
-
-        
-    print(origin_edge1)
-    print(origin_edge2)
-    print(origin_edge3)
-    print(origin_edge4)
         
     return [origin_edge1, origin_edge2, origin_edge3, origin_edge4]
 
@@ -591,26 +629,87 @@ def build_block_pattern(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list
         edge3 = origin_edge2[::-1]
         edge4 = origin_edge3
         pattern_lines = pattern_lines_x
-        
-    pattern_nodes = []
+    
+    post_index = 0
+    begin_index = 0
+    new_edge2 = []
+    section_list = [edge2[0]]
+    left_edge = edge1
+    ### OPTIMIZE: now, each time the function called, all the pattern_line would be looped once(there is no early break or quick search(binary search))
     for pattern_line in pattern_lines:
-        temp_node = intersection(edge2, pattern_line):
-        pattern_line.append(temp_node)
-    if not equal_node(edge2[0], pattern_nodes[0]):
-        pattern_nodes.insert(0, edge2[0])
-    if not equal_node(edge2[-1], pattern_nodes[-1]):
-        pattern_nodes.append(edge2[-1])
+        inner_intersection = intersection(pattern_line, edge4)
+        outer_intersection = intersection(pattern_line, edge2)
+        print(f"inner_intersection: {inner_intersection}")
+        print(f"outer_intersection: {outer_intersection}")
+        
+        if outer_intersection is not None:
+            ### append the outer intersection node to section_lis if it is not exist in section_list
+            if not equal_node(outer_intersection, section_list[-1]):
+                section_list.append(outer_intersection)
+                
+            ### if there is intersection between the edge4 and patttern line, the section end and builld the block
+            if inner_intersection is not None:
+                ### find the correspond index of inner intersection at edge4
+                begin_index = post_index
+                post_index += 1
+                while not equal_node(inner_intersection, edge4[post_index]):
+                    post_index += 1
+                    
+                if post_index == len(edge4)-1:
+                    break
+        
+                ### build the block        
+                temp_edge1 = left_edge
+                temp_edge2 = section_list
+                temp_edge3 = [inner_intersection, outer_intersection]
+                temp_edge4 = edge4[begin_index : post_index+1]
+                print(f"temp_edge1: {temp_edge1}")
+                print(f"temp_edge2: {temp_edge2}")
+                print(f"temp_edge3: {temp_edge3}")
+                print(f"temp_edge4: {temp_edge4}")
+                res = build_block(cdb, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+                
+                ### update new_edge2
+                new_edge2 = new_edge2 + res[1:]
+                
+                ### reset
+                section_list = [section_list[-1]]
+                left_edge = res[2]
 
+    ### [last block] build the last block which use the edge3 as its edge3
+    if not equal_node(section_list[-1], edge2[-1]):
+        section_list.append(edge2[-1])
+    temp_edge1 = left_edge
+    temp_edge2 = section_list
+    temp_edge3 = edge3
+    temp_edge4 = edge4[begin_index:]
+    print(f"temp_edge1: {temp_edge1}")
+    print(f"temp_edge2: {temp_edge2}")
+    print(f"temp_edge3: {temp_edge3}")
+    print(f"temp_edge4: {temp_edge4}")
+    res = build_block(cdb, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+    
+    ### [last block] update new_edge2
+    new_edge2 = new_edge2 + res[1:]
 
 ### 
 cdb = CDB()
 a = 20
 edge1 = [[0,0], [0,a]]
-edge2 = [] #[[0,a], [a,a]]
+edge2 = [[0,a], [a,a]]
 edge3 = [[a,0], [a,a]]
-edge4 = [[0,0], [a,0]]
+edge4 = []  #[[0,0], [a,0]]
 for i in range(0, a+1):
-    edge2.append([i, a])
+    edge4.append([i, 0])
+    
+pattern_lines_x = []
+pattern_lines_y = [[[3, -10], [3, a+10]], [[4, -10], [4, a+10]]]
 
-build_block(cdb, 5, edge1, edge2, edge3, edge4)
+cdb.add_pattern_line([edge1])
+cdb.add_pattern_line([edge2])
+cdb.add_pattern_line([edge3])
+cdb.add_pattern_line([edge4])
+cdb.add_pattern_line(pattern_lines_x)
+cdb.add_pattern_line(pattern_lines_y)
+build_block_pattern(cdb, 5, pattern_lines_x, pattern_lines_y, edge1, edge2, edge3, edge4)
 cdb.show_graph(f"edge1: {len(edge1)-1}, edge4: {len(edge4)-1}")
