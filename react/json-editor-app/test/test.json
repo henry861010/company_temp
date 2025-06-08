@@ -1,0 +1,23 @@
+{
+    "type1": "basic",
+    "type2": "game",
+    "type3": "standard",
+    "layer": {
+      "l1": { "a": "alpha", "b": "beta", "c": "gamma" },
+      "l2": { "a": "delta", "b": "epsilon", "c": "zeta" },
+      "l3": { "a": "eta", "b": "theta", "c": "iota" },
+      "l4": { "a": "kappa", "b": "lambda", "c": "mu" }
+    },
+    "core": {
+      "core1": { "a": "coreA", "b": "coreB" },
+      "core2": { "a": "coreC", "b": "coreD" },
+      "core3": { "a": "coreE", "b": "coreF" }
+    },
+    "player": {
+      "p1": { "a": "playerA", "b": "playerB", "c": "playerC" },
+      "p2": { "a": "playerD", "b": "playerE", "c": "playerF" },
+      "p3": { "a": "playerG", "b": "playerH", "c": "playerI" },
+      "p4": { "a": "playerJ", "b": "playerK", "c": "playerL" }
+    }
+  }
+  
