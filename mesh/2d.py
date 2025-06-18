@@ -103,9 +103,9 @@ def get_direction(edge):
 
 def intersection(edge1, edge2, limit: bool = True):
     x1, y1 = edge1[0]
-    x2, y2 = edge1[1]
+    x2, y2 = edge1[-1]
     x3, y3 = edge2[0]
-    x4, y4 = edge2[1]
+    x4, y4 = edge2[-1]
 
     denom = (x1 - x2)*(y3 - y4) - (y1 - y2)*(x3 - x4)
     if denom == 0:
@@ -738,29 +738,37 @@ def build_block_pattern(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list
     temp_edge2 = section_list
     temp_edge3 = edge3
     temp_edge4 = edge4[begin_index:]
-    
     res = build_block(cdb, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
-    
-    ### [last block] update new_edge2
     new_edge2 = new_edge2 + res[1:]
+    
+    if max_len == len(origin_edge4):
+        origin_edge2 = new_edge2
+    elif max_len == len(origin_edge1):
+        origin_edge1 = new_edge2
+    elif max_len == len(origin_edge2):
+        origin_edge4 = new_edge2[::-1]
+    elif max_len == len(origin_edge3):
+        origin_edge3 = new_edge2[::-1]
+    
+    return [origin_edge1, origin_edge2, origin_edge3, origin_edge4]
 
-def get_outline_prediect_expand (element_size, pattern_lines_x, pattern_lines_y, outline):
+def cal_expanding(element_size, pattern_lines_x, pattern_lines_y, outline):
     node1_x = outline[0][0]
     node1_y = outline[0][1]
     node2_x = outline[1][0]
     node2_y = outline[1][1]
-    direction = outline[2]
+    dir = get_direction(outline)
 
-    normal_direction = [-direction[1], direction[0]]
+    normal_direction = rotate(dir, 270)
     if normal_direction[1] == 1:
         index = 0
         while True:
             ### out of the boundary
-            if index == len(pattern_lines_y):
-                expand = -1
+            if index == len(pattern_lines_x):
+                expand = [0, element_size]
                 break
 
-            temp = pattern_lines_y[index]
+            temp = pattern_lines_x[index]
             temp_node1_x = temp[0][0]
             temp_node1_y = temp[0][1]
             temp_node2_x = temp[1][0]
@@ -773,14 +781,14 @@ def get_outline_prediect_expand (element_size, pattern_lines_x, pattern_lines_y,
 
             index += 1
     elif normal_direction[1] == -1:
-        index = len(pattern_lines_y) - 1
+        index = len(pattern_lines_x) - 1
         while True:
             ### out of the boundary
-            if 0 < index:
-                expand = -1
+            if index < 0:
+                expand = [0, -element_size]
                 break
 
-            temp = pattern_lines_y[index]
+            temp = pattern_lines_x[index]
             temp_node1_x = temp[0][0]
             temp_node1_y = temp[0][1]
             temp_node2_x = temp[1][0]
@@ -796,11 +804,11 @@ def get_outline_prediect_expand (element_size, pattern_lines_x, pattern_lines_y,
         index = 0
         while True:
             ### out of the boundary
-            if index == len(pattern_lines_x):
-                expand = -1
+            if index == len(pattern_lines_y):
+                expand = [element_size, 0]
                 break
 
-            temp = pattern_lines_x[index]
+            temp = pattern_lines_y[index]
             temp_node1_x = temp[0][0]
             temp_node1_y = temp[0][1]
             temp_node2_x = temp[1][0]
@@ -813,13 +821,13 @@ def get_outline_prediect_expand (element_size, pattern_lines_x, pattern_lines_y,
 
             index += 1
     elif normal_direction[0] == -1:
-        index = len(pattern_lines_x) - 1
+        index = len(pattern_lines_y) - 1
         while True:
             ### out of the boundary
-            if 0 < index:
-                expand = -1
+            if index < 0:
+                expand = [-element_size, 0]
                 break
-            temp = pattern_lines_x[index]
+            temp = pattern_lines_y[index]
             temp_node1_x = temp[0][0]
             temp_node1_y = temp[0][1]
             temp_node2_x = temp[1][0]
@@ -910,15 +918,14 @@ def build_layer(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list, patter
             ### build the center block
             if not equal_node(edge1[0], right_inner_node):
                 temp_edge1 = edge1
-                temp_edge2 = [edge1[0], res_corner[2][-1]]
-                temp_edge3 = res_corner[2]
+                temp_edge2 = [edge1[-1], res_corner[0][-1]]
+                temp_edge3 = res_corner[0]
                 temp_edge4 = outline_list[now][left_inner_index:right_inner_index+1]
-                res_block = build_block(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
-                
+                res_block = build_block_pattern(cdb_obj, element_size, pattern_lines_x, pattern_lines_y, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
                 ### update new_outline
                 new_outline = new_outline +  res_block[1]
                 
-            edge1 = res_corner[2]
+            edge1 = res_corner[1]
             edge1.reverse()
         else:
             ### right node1
@@ -951,7 +958,7 @@ def build_layer(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list, patter
             temp_edge2 = [right_node2, right_node3]
             temp_edge3 = [right_node4, right_node3]
             temp_edge4 = [right_node1, right_node4]
-            res_corner = build_unit_corner(cdb_obj, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+            res_corner = build_block(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
             
             ### build the center block
             if not equal_node(edge1[0], right_node1):
@@ -959,7 +966,7 @@ def build_layer(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list, patter
                 temp_edge2 = [edge1[-1], right_node2]
                 temp_edge3 = res_corner[0]
                 temp_edge4 = outline_list[now][left_inner_index:]
-                res_block = build_block(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+                res_block = build_block_pattern(cdb_obj, element_size, pattern_lines_x, pattern_lines_y, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
                 
                 ### update new_outline
                 new_outline = new_outline +  res_block[1]
@@ -975,14 +982,34 @@ def build_layer(cdb_obj: 'CDB', element_size: int, pattern_lines_x: list, patter
         now += 1
     return new_outline_list
 
+def build_layers(cdb_obj: 'CDB', element_sizes: list, pattern_lines_x: list, pattern_lines_y: list, expanding_list: list, outline_list: list):
+    for element_size in element_sizes:
+        ### calculate the expanding
+        expanding_list = []
+        for outline in outline_list:
+            expanding_list.append(cal_expanding(3, pattern_lines_x, pattern_lines_y, outline))
+    
+        ### build the expanding
+        outline_list = build_layer(cdb_obj = cdb, element_size = element_size, pattern_lines_x = pattern_lines_x, pattern_lines_y = pattern_lines_y, expanding_list = expanding_list , outline_list = outline_list)
+
 ### 
 cdb = CDB()
-a = 100000
-edge1 = [[0,0], [0,a]]
-edge2 = [[0,a], [a,a]]
-edge3 = [[a,a], [a,0]]
-edge4 = [[a,0], [0,0]]
-outline_list = [edge1, edge2, edge3, edge4]
+    
+a = 30
+element_size = 3
+edge1 = [[0,0], [a,0]]
+edge2 = [[a,0], [a,a]]
+edge3 = [[a,a], [2*a,a]]
+edge4 = [[2*a,a], [2*a,0]]
+edge5 = [[2*a,0], [3*a,0]]
+edge6 = [[3*a,0], [3*a,-a]]
+edge7 = [[3*a,-a], [2*a,-a]]
+edge8 = [[2*a,-a], [2*a,-2*a]]
+edge9 = [[2*a,-2*a], [a,-2*a]]
+edge10 = [[a,-2*a], [a,-a]]
+edge11 = [[a,-a], [0,-a]]
+edge12 = [[0,-a], [0,0]]
+outline_list = [edge1, edge2, edge3, edge4, edge5, edge6, edge7, edge8, edge9, edge10, edge11, edge12]
 for i, outline in enumerate(outline_list):
     new_outline = []
     num = int(abs(outline[-1][0] - outline[0][0]) + abs(outline[-1][1] - outline[0][1]))
@@ -992,16 +1019,18 @@ for i, outline in enumerate(outline_list):
         new_outline.append([outline[0][0]+x*j, outline[0][1]+y*j])
     outline_list[i] = new_outline
 
-cdb.add_pattern_line([edge1])
-cdb.add_pattern_line([edge2])
-cdb.add_pattern_line([edge3])
-cdb.add_pattern_line([edge4])
+expanding_list = []
+for outline in outline_list:
+    expanding_list.append(cal_expanding(3, [], [], outline))
 
-element_size = 3
+cdb.add_pattern_line([edge1, edge2, edge3, edge4, edge5, edge6, edge7, edge8])
+cdb.add_pattern_line([[[50, -50], [50, 50]]])
+
 start_time = time.time()
-build_layer(cdb_obj = cdb, element_size = element_size, pattern_lines_x = [], pattern_lines_y = [], expanding_list = [[-element_size,0], [0,element_size], [element_size,0], [0,-element_size]], outline_list = outline_list)
+build_layer(cdb_obj = cdb, element_size = element_size, pattern_lines_x = [], pattern_lines_y = [[[50, -50], [50, 50]]], expanding_list = expanding_list , outline_list = outline_list)
 end_time = time.time()
 elapsed = end_time - start_time
+print(f"mesh number: {len(cdb.elements)}")
 print(f"Elapsed time: {elapsed:.8f} seconds")
 
-#cdb.show_graph(f"edge1: {len(edge1)-1}, edge4: {len(edge4)-1}")
+cdb.show_graph(f"edge1: {len(edge1)-1}, edge4: {len(edge4)-1}")
