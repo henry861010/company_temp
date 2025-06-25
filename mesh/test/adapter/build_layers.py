@@ -1,3 +1,6 @@
+from cdb import *
+from adapter import *
+
 cdb = CDB()
     
 a = 100

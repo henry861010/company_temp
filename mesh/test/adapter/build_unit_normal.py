@@ -1,3 +1,6 @@
+from cdb import *
+from adapter import *
+
 cdb = CDB()
 #edge1 = [[0, 0], [0 ,2], [0 ,4], [0 ,6], [0 ,8], [0 ,10]]
 #edge2 = [[0, 10], [10 ,10]]

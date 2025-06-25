@@ -1,3 +1,6 @@
+from cdb import *
+from adapter import *
+
 edge1_num = 5
 edge4_num = 5
 

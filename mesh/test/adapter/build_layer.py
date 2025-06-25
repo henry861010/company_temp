@@ -1,3 +1,6 @@
+from cdb import *
+from adapter import *
+
 ### the rectangle
 for i in range(50, 200):
     cdb = CDB()

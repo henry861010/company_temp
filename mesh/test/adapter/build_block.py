@@ -1,3 +1,6 @@
+from cdb import *
+from adapter import *
+
 cdb = CDB()
 a = 20
 edge1 = [[0,0], [0,a]]
