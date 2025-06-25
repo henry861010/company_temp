@@ -93,75 +93,15 @@ def _region_check_struct(region_struct: dict):
     }
 '''
 def region_set_gap(region_struct: dict, gap: float, approximate: float = 0):
-    ### check the structure of region_struct
-    _region_check_struct(region_struct)
-    
-    section_type = region_struct["section_type"]
-    table_x_dim = region_struct["table_x_dim"]
-    table_y_dim = region_struct["table_y_dim"]
-    table_x_id = region_struct["table_x_id"]
-    table_y_id = region_struct["table_y_id"]
-    section_num_x = region_struct["section_num_x"]
-    section_num_y = region_struct["section_num_y"]
-    
-    ### determine the "gap" section
-    ref_map = (1 << 1) + 1
-    for i in range(0, section_num_x):
-        for j in range(0, section_num_y):
-            if not section_type[i][j] & ref_map:
-                ### x-axis
-                if i>0 and section_type[i-1][j] & ref_map:
-                    right = i + 1
-                    while 1:
-                        if right >= section_num_x:
-                            ### there is no die type at the right
-                            right = -1
-                            break
-                        elif section_type[right][j] & ref_map:
-                            ### find the die
-                            break
-                        else:
-                            ### continue to find
-                            right += 1
-                    if right != -1 and table_x_dim[right] - table_x_dim[i] <= gap:
-                        ### if there is die at the right section, set all the empty area to fill
-                        for k in range(i, right):
-                            section_type[k][j] += 2
-
-                ### y-axis
-                if j>0 and section_type[i][j-1] & ref_map:
-                    upper = j + 1
-                    while 1:
-                        if upper >= section_num_y:
-                            upper = -1
-                            break
-                        elif section_type[i][upper] & ref_map:
-                            break
-                        else:
-                            upper += 1
-                    if upper != -1 and table_y_dim[upper] - table_y_dim[j] <= gap:
-                        for k in range(j, upper):
-                            section_type[i][k] += 2
-
-            ### add the lose one (only in x-axis ???)
-            if section_type[i][j] & ref_map:
-                left = i - 1
-                while 1:
-                    if left<0:
-                        left = -1
-                        break
-                    elif section_type[left][j] & ref_map:
-                        left += 1
-                        break
-                    else:
-                        left -= 1
-                if left != -1 and table_x_dim[i] - table_x_dim[left] <= gap:
-                    for k in range(left, i):
-                        section_type[k][j] += 2
-                        
-    ### set the approximate
-    if approximate > 0:
-        ref_map = (1 << 1)
+    def cal_gap(region_struct, gap, ref_map):
+        section_type = region_struct["section_type"]
+        table_x_dim = region_struct["table_x_dim"]
+        table_y_dim = region_struct["table_y_dim"]
+        table_x_id = region_struct["table_x_id"]
+        table_y_id = region_struct["table_y_id"]
+        section_num_x = region_struct["section_num_x"]
+        section_num_y = region_struct["section_num_y"]
+        
         for i in range(0, section_num_x):
             for j in range(0, section_num_y):
                 if not section_type[i][j] & ref_map:
@@ -200,7 +140,7 @@ def region_set_gap(region_struct: dict, gap: float, approximate: float = 0):
                                 section_type[i][k] += 2
 
                 ### add the lose one (only in x-axis ???)
-                if section_type[i][j] & ref_map:
+                if section_type[i][j] & (1 << 1):
                     left = i - 1
                     while 1:
                         if left<0:
@@ -214,7 +154,25 @@ def region_set_gap(region_struct: dict, gap: float, approximate: float = 0):
                     if left != -1 and table_x_dim[i] - table_x_dim[left] <= gap:
                         for k in range(left, i):
                             section_type[k][j] += 2
-    region_struct["section_type"] = section_type
+        region_struct["section_type"] = section_type
+        return region_struct
+         
+    ### check the structure of region_struct
+    _region_check_struct(region_struct)
+    
+    ### determine the "gap" section
+    ref_map = (1 << 1) + 1
+    region_struct = cal_gap(region_struct, gap, ref_map)   
+                   
+    ### set the approximate
+    if approximate > 0:
+        ### set the 1 to 2
+        for i in range(0, region_struct["section_num_x"]):
+            for j in range(0, region_struct["section_num_y"]):
+                if region_struct["section_type"][i][j] & 1:
+                    region_struct["section_type"][i][j] += 2
+        ref_map = (1 << 1) + 1
+        region_struct = cal_gap(region_struct, approximate, ref_map)    
     
     return region_struct
 

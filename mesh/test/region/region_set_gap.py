@@ -14,20 +14,39 @@ def print_dim(dim_list):
         print(f"[{dim[1]} {dim[3]}]",end=" ")
     print("")
 
+'''
 ### test1
-#gap = 3
-#dim_list = [[0, 0, 1, 6], [6, 0, 8, 2], [4, 4, 8, 6]]
+gap = 3
+dim_list = [[0, 0, 1, 6], [6, 0, 8, 2], [4, 4, 8, 6]]
+region_struct = region_get_sturct(dim_list)
+region_struct = region_set_gap(region_struct, gap)
+gap_dim_list = region_merge_section(region_struct)
+'''
 
+'''
 ### test2
-#gap = 6
-#dim_list = [[0, 0, 1, 2], [0, 3, 2, 9], [5, 0, 7, 1], [5, 7, 7, 9]]
+gap = 6
+dim_list = [[0, 0, 1, 2], [0, 3, 2, 9], [5, 0, 7, 1], [5, 7, 7, 9]]
+region_struct = region_get_sturct(dim_list)
+region_struct = region_set_gap(region_struct, gap)
+gap_dim_list = region_merge_section(region_struct)
+'''
 
+'''
 ### test3
 gap = 3
 dim_list = [[0, 0, 1, 10], [5, 0, 10, 3], [5, 6, 10, 10]]
-
 region_struct = region_get_sturct(dim_list)
 region_struct = region_set_gap(region_struct, gap)
+gap_dim_list = region_merge_section(region_struct)
+'''
+
+### test4
+gap = 3
+approximate = 20
+dim_list = [[0, 0, 3, 3], [4, 0, 6, 10], [20, 2, 24, 10]]
+region_struct = region_get_sturct(dim_list)
+region_struct = region_set_gap(region_struct, gap, approximate)
 gap_dim_list = region_merge_section(region_struct)
 
 
