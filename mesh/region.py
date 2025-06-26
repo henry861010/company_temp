@@ -387,6 +387,8 @@ def region_get_outline(region_struct: dict):
         section_type[i][j] = 0
         clear_found_section(section_type, i+1, j)
         clear_found_section(section_type, i, j+1)
+        clear_found_section(section_type, i-1, j)
+        clear_found_section(section_type, i, j-1)
     
     ### check the structure of region_struct
     _region_check_struct(region_struct)

@@ -42,8 +42,8 @@ section_type = [
     [0, 2, 2, 2, 2, 2, 0, 0, 0, 0],
     [0, 0, 2, 2, 0, 0, 0, 0, 0, 0],
     [0, 0, 2, 2, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 2, 2, 0, 0, 0, 0],
+    [0, 0, 0, 0, 2, 2, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 ]
 
@@ -61,4 +61,5 @@ region_struct["table_x_id"] = []
 region_struct["table_y_id"] = []
 
 outline = region_get_outline(region_struct)
-print(outline)
+for item in outline:
+    print(item)
