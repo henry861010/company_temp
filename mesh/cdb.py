@@ -346,7 +346,7 @@ class CDB:
                     print(x_list)
                     print("")
 
-section_typ = [
+section_type = [
     [0, 2, 2, 2, 2, 2, 0, 0, 0, 0],
     [0, 2, 2, 2, 2, 2, 0, 0, 0, 0],
     [0, 0, 0, 2, 2, 2, 0, 2, 0, 0],
@@ -362,5 +362,5 @@ table_x_dim = [0, 10, 23, 37, 41, 53, 69, 76, 85, 91, 104]
 table_y_dim = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 
 cdb = CDB()
-cdb.build_blocks(4, section_typ, table_y_dim, table_y_dim)
+cdb.build_blocks(4, section_type, table_y_dim, table_y_dim)
 cdb.show_graph()

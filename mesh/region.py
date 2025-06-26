@@ -1,4 +1,5 @@
 import numpy as np
+import math
 
 '''
     boundary_list: [boundary]
@@ -334,3 +335,125 @@ def region_mesh_block(region_struct: dict):
                 print(x_list)
                 print("")
     return mesh_block_list
+
+
+'''
+    find the outline list
+'''
+def region_get_outline(region_struct: dict):
+    ### rotate direction
+    def rotate(v, degree):
+        tolerance = 0.001
+        x = v[0]
+        y = v[1]
+        theta_rad = math.radians(-degree)  # Convert to radians
+        x_new = x * math.cos(theta_rad) - y * math.sin(theta_rad)
+        y_new = x * math.sin(theta_rad) + y * math.cos(theta_rad)
+        if abs(x_new) < tolerance:
+            x_new = 0
+        if abs(y_new) < tolerance:
+            y_new = 0
+        return [int(x_new), int(y_new)]
+    
+    ### identity if the section_type[i][j] is empty or target(2)
+    def section_status(section_type, i, j):
+        if i < 0 or i >= len(section_type):
+            return False
+        if j < 0 or j >= len(section_type[0]):
+            return False
+        return section_type[i][j] == 2
+    
+    ### get end point
+    def get_end_point(dir, i, j):
+        if dir[0] == 0  and dir[1] == 1:
+            return [i, j+1]
+        elif dir[0] == 0  and dir[1] == -1:
+            return [i+1, j]
+        elif dir[0] == -1  and dir[1] == 0:
+            return [i, j]
+        elif dir[0] == 1  and dir[1] == 0:
+            return [i+1, j+1]
+        else:
+            print("[region_get_outline - get_end_point] UNKNOW")
+    
+    ### clear the found block
+    def clear_found_section(section_type, i, j):
+        if i < 0 or i >= len(section_type):
+            return
+        if j < 0 or j >= len(section_type[0]):
+            return
+        if not section_type[i][j] & 2:
+            return 
+        section_type[i][j] = 0
+        clear_found_section(section_type, i+1, j)
+        clear_found_section(section_type, i, j+1)
+    
+    ### check the structure of region_struct
+    _region_check_struct(region_struct)
+    
+    ### deep copy the section_type(2D list)
+    section_type = [row[:] for row in region_struct["section_type"]]
+    section_num_x = region_struct["section_num_x"]
+    section_num_y = region_struct["section_num_y"]
+    table_x_dim = region_struct["table_x_dim"]
+    table_y_dim = region_struct["table_y_dim"]
+    
+    ### find the outline
+    outline_list_list = [] 
+    for i in range(0, section_num_x):
+        for j in range(0, section_num_y):
+            if section_type[i][j] == 2:
+                ### set the dirst
+                outline_list = [] 
+                first_i = i
+                first_j = j
+                begin_point = [table_x_dim[i], table_y_dim[j]]
+                dir_now = [0, 1]
+                
+                while True:
+                    ### convert to formal format
+                    dir_270 = rotate(dir_now, 270)
+                    
+                    b_i = dir_270[0] + dir_now[0] + i
+                    b_j = dir_270[1] + dir_now[1] + j
+                    c_i = dir_now[0] + i
+                    c_j = dir_now[1] + j
+                    
+                    ### rotate 270 (rotate 270 & vary i-j & add new outline)
+                    if section_status(section_type, b_i, b_j) and section_status(section_type, c_i, c_j):
+                        ### add the new outline
+                        res = get_end_point(dir_now, i, j)
+                        end_point = [table_x_dim[res[0]], table_y_dim[res[1]]]
+                        outline_list.append([begin_point, end_point])
+                        begin_point = end_point
+                        
+                        ### vary the direction & i-j
+                        i += (dir_270[0] + dir_now[0])
+                        j += (dir_270[1] + dir_now[1])
+                        dir_now = dir_270
+                        
+                    ### rotate 90 (rotate 90 & same i-j & add new outline)
+                    elif not section_status(section_type, c_i, c_j):
+                        ### add the new outline
+                        res = get_end_point(dir_now, i, j)
+                        end_point = [table_x_dim[res[0]], table_y_dim[res[1]]]
+                        outline_list.append([begin_point, end_point])
+                        begin_point = end_point
+                        
+                        ### vary the direction & i-j
+                        dir_now = rotate(dir_now, 90)
+                        
+                    ### go through (same dir & vary i-j)
+                    else:
+                        i += dir_now[0]
+                        j += dir_now[1]
+                        
+                    if i == first_i and j == first_j and dir_now[0] == 0 and dir_now[1] == 1:
+                        break
+                    
+                ### append the outline of the block to the outline_list_list (multiple outline)
+                outline_list_list.append(outline_list)
+                
+                ### clear the found to prevent the duplicate seach
+                clear_found_section(section_type, i, j)
+    return outline_list_list
