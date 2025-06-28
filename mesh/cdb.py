@@ -1,13 +1,26 @@
 import numpy as np
 import math
 import matplotlib.pyplot as plt
-#from my_math import *
+import matplotlib.cm as cm
+from my_math import *
 
 '''
-    elements: [
+    element_2D: [
         {
             element_id,
             comp_id,
+            area,
+            node1_x, node1_y,
+            node2_x, node2_y,
+            node3_x, node3_y,
+            node4_x, node4_y
+        }
+    ]
+    element_2D: [
+        {
+            element_id,
+            comp_id,
+            area,
             node1_x, node1_y,
             node2_x, node2_y,
             node3_x, node3_y,
@@ -39,7 +52,7 @@ import matplotlib.pyplot as plt
     ]
     
     area: {
-        comp_id
+        material
         ranges: [
             {
                 type: BOX/CONE
@@ -63,31 +76,29 @@ import matplotlib.pyplot as plt
 '''
 ELEMENT_ID = 0
 ELEMENT_COMP_ID = 1
-ELEMENT_NODE1_X = 2
-ELEMENT_NODE1_Y = 3
-ELEMENT_NODE2_X = 4
-ELEMENT_NODE2_Y = 5
-ELEMENT_NODE3_X = 6
-ELEMENT_NODE3_Y = 7
-ELEMENT_NODE4_X = 8
-ELEMENT_NODE4_Y = 9
-
-ELEMENT_COMP_ID = 0
+ELEMENT_AREA = 2
+ELEMENT_NODE1_X = 3
+ELEMENT_NODE1_Y = 4
+ELEMENT_NODE2_X = 5
+ELEMENT_NODE2_Y = 6
+ELEMENT_NODE3_X = 7
+ELEMENT_NODE3_Y = 8
+ELEMENT_NODE4_X = 9
+ELEMENT_NODE4_Y = 10
+ELEMENT_len = 11
 
 class CDB:
     def __init__(self):
         self.components = [] ### [component_name, ... ]
-        self.elements = np.empty((0, 10), dtype=np.float32)
-        self.element_nodes = np.empty((0, 4), dtype=np.float32)
+        self.element_2D = np.empty((0, ELEMENT_len), dtype=np.float32)
+        self.element_3D = None
+        self.element_nodes = np.empty((0, 4), dtype=np.int16)
         self.nodes = np.empty((0, 2), dtype=np.float32)
-        self.materials = []
+        self.material_table = {"EMPTY": 0}
         self.node_map = {}
-        
-        ### implicit info
-        self._node_num = 0
-        self._element_num = 0
-        self.z_offset = 0
+        self.z_table = []
 
+    ### basic model building operation
     def add_node(self, x: float, y: float):
         node_key = f"{x}-{y}"
         if node_key not in self.node_map:
@@ -105,76 +116,33 @@ class CDB:
         node3_id, node3_x, node3_y = self.add_node(*node3_dim)
         node4_id, node4_x, node4_y = self.add_node(*node4_dim)
 
-        element_id = len(self.elements)
-        new_element = np.array([[element_id, comp_id,
+        element_id = len(self.element_2D)
+        new_element = np.array([[element_id, comp_id, 0,
                                 node1_x, node1_y,
                                 node2_x, node2_y,
                                 node3_x, node3_y,
                                 node4_x, node4_y]], dtype=np.float32)  # shape (1, 10)
 
-        self.elements = np.vstack([self.elements, new_element])
+        self.element_2D = np.vstack([self.element_2D, new_element])
 
-        new_element_nodes = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.float32)  # shape (1, 4)
+        new_element_nodes = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.int16)  # shape (1, 4)
         self.element_nodes = np.vstack([self.element_nodes, new_element_nodes])
-
-        self._element_num += 1
+        
         return element_id
-    
-    def show_graph(self, title: str = "2D mesh"):
-        ### show the element
-        for element in self.elements:
-            plt.plot([element[ELEMENT_NODE1_X], element[ELEMENT_NODE2_X]], [element[ELEMENT_NODE1_Y], element[ELEMENT_NODE2_Y]], color='black')
-            plt.plot([element[ELEMENT_NODE2_X], element[ELEMENT_NODE3_X]], [element[ELEMENT_NODE2_Y], element[ELEMENT_NODE3_Y]], color='black')
-            plt.plot([element[ELEMENT_NODE3_X], element[ELEMENT_NODE4_X]], [element[ELEMENT_NODE3_Y], element[ELEMENT_NODE4_Y]], color='black')
-            plt.plot([element[ELEMENT_NODE4_X], element[ELEMENT_NODE1_X]], [element[ELEMENT_NODE4_Y], element[ELEMENT_NODE1_Y]], color='black')
-            
-        plt.gca().set_aspect('equal')
-        plt.grid(True)
-        plt.title(f"{title}")
-        plt.show()
-        plt.close()
-    
-    def generate_cdb(self):
-        with open('cdb.txt', 'w') as f:
-            f.write(f"nodes:\n")
-            for index, node in enumerate(self.nodes):
-                 f.write(f"    {index}. {node[0]} {node[1]}\n")
-            f.write(f"element:\n")
-            for index, element in enumerate(self.elements):
-                 f.write(f"    {index}. {element[0]} {element[1]} {element[2]} {element[3]} {element[4]}\n")
-    
-    def cal_areas(self):
-        # Extract coordinates as (N, 4) for each x and y
-        x1, y1 = self.elements[:, ELEMENT_NODE1_X],  self.elements[:, ELEMENT_NODE1_X]
-        x2, y2 = self.elements[:, ELEMENT_NODE2_X],  self.elements[:, ELEMENT_NODE2_X]
-        x3, y3 = self.elements[:, ELEMENT_NODE3_X],  self.elements[:, ELEMENT_NODE3_X]
-        x4, y4 = self.elements[:, ELEMENT_NODE4_X],  self.elements[:, ELEMENT_NODE4_X]
 
-        # Shoelace formula for quadrilateral
-        areas = 0.5 * np.abs(
-            x1*y2 + x2*y3 + x3*y4 + x4*y1 -
-            (y1*x2 + y2*x3 + y3*x4 + y4*x1)
-        )
-
-        # Store back into column 13
-        self.elements[:, ELEMENT_AREA] = areas
-    
     def organize(self, area: dict):
-        # Start with all True (include everything initially)
-        mask = np.ones(len(self.elements), dtype=bool)
-
-        # AND each range box constraint (element must satisfy all range boxes)
+        # AND each "range" constraint (element must satisfy all range boxes)
         range_masks = []
         for range_info in area["ranges"]:
             if range_info["type"] == "BOX":
-                range_info.append(
-                    (self.elements[:, ELEMENT_NODE1_X] >= range_info["dim"][0]) &
-                    (self.elements[:, ELEMENT_NODE1_Y] >= range_info["dim"][1]) &
-                    (self.elements[:, ELEMENT_NODE3_X] <= range_info["dim"][2]) &  # corrected
-                    (self.elements[:, ELEMENT_NODE3_Y] <= range_info["dim"][3])    # corrected
+                range_masks.append(
+                    (self.element_2D[:, ELEMENT_NODE1_X] >= range_info["dim"][0]) &
+                    (self.element_2D[:, ELEMENT_NODE1_Y] >= range_info["dim"][1]) &
+                    (self.element_2D[:, ELEMENT_NODE3_X] <= range_info["dim"][2]) &
+                    (self.element_2D[:, ELEMENT_NODE3_Y] <= range_info["dim"][3])  
                 )
         if len(range_masks) > 0:
-            target_elements = self.elements[np.logical_or.reduce(range_masks)]
+            target_elements = self.element_2D[np.logical_or.reduce(range_masks)]
 
         # Exclude any that intersect with a hole
         hole_masks = []
@@ -196,7 +164,10 @@ class CDB:
         exclude_masks = []
         for metal_info in area["metals"]:
             if metal_info["type"] == "CONTINUE":
-                comp_id = self.materials[metal_info["material"]]
+                ### the assigned material
+                comp_id = self.material_table[metal_info["material"]]
+                
+                ### find the material with same materal as assigned
                 exclude_masks.append(
                     ~(target_elements[:, ELEMENT_COMP_ID] == comp_id)
                 )
@@ -204,25 +175,64 @@ class CDB:
             target_elements = target_elements[np.logical_and.reduce(exclude_masks)]
         
         ### assign the metal "NORMAL"
+        np.random.seed(1)
         np.random.shuffle(target_elements)
         index = len(target_elements) - 1
         for metal_info in area["metals"]:
             if metal_info["type"] == "NORMAL":
-                comp_id = self.materials[metal_info["material"]]
+                ### the assigned material
+                if not metal_info["material"] in self.material_table:
+                    new_comp_id = len(self.material_table)
+                    self.material_table[metal_info["material"]] = new_comp_id
+                comp_id = self.material_table[metal_info["material"]]
+                
+                ### begin to assign the metal
                 seleted_area = 0
-                while seleted_area < total_area and index >= 0:
+                temp_count = 0
+                while index >= 0 and (seleted_area / total_area) < metal_info["density"]/100:
                     seleted_area += target_elements[index][ELEMENT_AREA]
-                    target_elements[index][ELEMENT_COMP_ID] = comp_id
+                    element_id = int(target_elements[index][ELEMENT_ID])
+                    self.element_2D[element_id][ELEMENT_COMP_ID] = comp_id
                     index -= 1
+                    temp_count += 1
+        ### the index ~ end was assigned and should be remove from target_elements 
         target_elements = target_elements[0 : index + 1]
                     
         ### assign the material
+        if not area["material"] in self.material_table:
+            new_comp_id = len(self.material_table)
+            self.material_table[area["material"]] = new_comp_id
         target_element_index = target_elements[:, ELEMENT_ID].astype(int)
-        self.elements[target_element_index, ELEMENT_COMP_ID] = self.materials[area["material"]]
+        self.element_2D[target_element_index, ELEMENT_COMP_ID] = self.material_table[area["material"]]
         
-    def drag(self, end: float, element_size: float):
-        print("")
+    def drag(self, element_size: float, end: float):
+        if self.element_3D is None:
+            self.element_3D = np.empty((0, len(self.element_2D)), dtype=np.int16)
+        if self.element_3D.shape[1] != len(self.element_2D):
+            self.element_3D = np.empty((0, len(self.element_2D)), dtype=np.int16)
         
+        if len(self.z_table) > 0:
+            z_now = self.z_table[-1]    
+        else:
+            z_now = 0
+        distance = end - z_now
+        on_drag = math.ceil(distance/element_size)
+        if f_ne(on_drag, distance/element_size):
+            element_size = distance / on_drag
+        
+        ### drag first to end-1
+        for i in range(on_drag - 1):
+            z_now += element_size
+            self.z_table.append(z_now)
+            self.element_3D = np.vstack([self.element_3D, self.element_2D[:,ELEMENT_COMP_ID]])
+        
+        ### drag the last
+        for i in range(on_drag - 1):
+            self.z_table.append(end)
+            self.element_3D = np.vstack([self.element_3D, self.element_2D[:,ELEMENT_COMP_ID]])
+            
+    
+    ### wrap operation
     def build_block(self, element_size: float, x_list: list, y_list):
         new_x_list = [x_list[0]]
         new_y_list = [y_list[0]]
@@ -298,7 +308,7 @@ class CDB:
                             n += 1
                         upper = min(upper, n)
                     
-                    ### determine the reference node
+                    ### determine the reference element
                     for m in range(i+1, right-1):
                         ### clear the reference mark 
                         if section_type[m][j-1] != 2:
@@ -346,21 +356,112 @@ class CDB:
                     print(x_list)
                     print("")
 
-section_type = [
-    [0, 2, 2, 2, 2, 2, 0, 0, 0, 0],
-    [0, 2, 2, 2, 2, 2, 0, 0, 0, 0],
-    [0, 0, 0, 2, 2, 2, 0, 2, 0, 0],
-    [0, 0, 0, 2, 2, 2, 0, 2, 2, 2],
-    [0, 2, 2, 2, 2, 2, 0, 2, 2, 2],
-    [0, 2, 2, 2, 2, 2, 0, 2, 0, 0],
-    [0, 0, 0, 0, 2, 2, 2, 2, 2, 2],
-    [0, 0, 0, 0, 2, 2, 0, 2, 2, 2],
-    [0, 0, 0, 0, 2, 2, 0, 2, 2, 2],
-    [0, 0, 0, 0, 2, 2, 0, 0, 0, 0]
-]
-table_x_dim = [0, 10, 23, 37, 41, 53, 69, 76, 85, 91, 104]
-table_y_dim = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    ### Searching
+    def cal_areas(self):
+        # Extract coordinates as (N, 4) for each x and y
+        x1, y1 = self.element_2D[:, ELEMENT_NODE1_X],  self.element_2D[:, ELEMENT_NODE1_Y]
+        x2, y2 = self.element_2D[:, ELEMENT_NODE2_X],  self.element_2D[:, ELEMENT_NODE2_Y]
+        x3, y3 = self.element_2D[:, ELEMENT_NODE3_X],  self.element_2D[:, ELEMENT_NODE3_Y]
+        x4, y4 = self.element_2D[:, ELEMENT_NODE4_X],  self.element_2D[:, ELEMENT_NODE4_Y]
 
-cdb = CDB()
-cdb.build_blocks(4, section_type, table_y_dim, table_y_dim)
-cdb.show_graph()
+        # Shoelace formula for quadrilateral
+        areas = 0.5 * np.abs(
+            x1*y2 + x2*y3 + x3*y4 + x4*y1 -
+            (y1*x2 + y2*x3 + y3*x4 + y4*x1)
+        )
+
+        # Store back into column 13
+        self.element_2D[:, ELEMENT_AREA] = areas
+        
+    ### CDB format
+    def read_CDB(self):
+        print("~")
+        
+    def generate_cdb(self, path: str = 'cdb.txt', element_type: str = "185"):
+        with open(path, 'w') as f:
+            ### build the nodes
+            node_id_offset = 1
+            node_id_icr = len(self.nodes)
+            f.write(f"nodes:\n")
+            ### now = 0
+            for index, node in enumerate(self.nodes):
+                f.write(f"    {index + node_id_offset}. {node[0]} {node[1]} {0}\n")
+            node_id_offset += node_id_icr
+            
+            ### the other layer
+            for z in self.z_table:
+                for index, node in enumerate(self.nodes):
+                    f.write(f"    {index + node_id_offset}. {node[0]} {node[1]} {z}\n")
+                node_id_offset += node_id_icr
+                 
+            ### build the elements
+            node_id_icr = len(self.nodes)
+            element_id_offset = 1
+            element_id_icr = len(self.element_2D)
+            f.write(f"element:\n")
+            for z in self.z_table:
+                for index, element_node in enumerate(self.element_nodes):
+                    id = index + element_id_offset
+                    node1_id = element_node[0] + 1
+                    node2_id = element_node[1] + 1
+                    node3_id = element_node[2] + 1
+                    node4_id = element_node[3] + 1
+                    node5_id = element_node[0] + 1 + node_id_icr
+                    node6_id = element_node[1] + 1 + node_id_icr
+                    node7_id = element_node[2] + 1 + node_id_icr
+                    node8_id = element_node[3] + 1 + node_id_icr
+                    f.write(f"    {id}. {node1_id} {node2_id} {node3_id} {node4_id} {node5_id} {node6_id} {node7_id} {node8_id} \n")
+                element_id_offset += element_id_icr
+            
+            ### build the component
+            for material, comp_id in self.material_table.items():
+                f.write(f"COMP-{material}:\n")
+                
+                element_id_offset = 1
+                element_id_icr = len(self.element_2D)
+                for elements in self.element_3D:
+                    indices = np.where(elements == comp_id)[0]
+                    for index in indices:
+                        f.write(f"      {index + element_id_offset}\n")
+                    element_id_offset += element_id_icr
+            
+    ### Debug
+    def show_2d_graph(self, title: str = "2D mesh"):
+        material_to_color = {
+            index: cm.tab20(index / max(1, len(self.material_table) - 1)) for material, index in self.material_table.items()
+        }
+        for element in self.element_2D:
+            x_coords = [
+                element[ELEMENT_NODE1_X],
+                element[ELEMENT_NODE2_X],
+                element[ELEMENT_NODE3_X],
+                element[ELEMENT_NODE4_X]
+            ]
+            y_coords = [
+                element[ELEMENT_NODE1_Y],
+                element[ELEMENT_NODE2_Y],
+                element[ELEMENT_NODE3_Y],
+                element[ELEMENT_NODE4_Y]
+            ]
+            color = material_to_color[element[ELEMENT_COMP_ID]]
+            
+            plt.fill(x_coords, y_coords, color=color, edgecolor='black')
+
+        plt.gca().set_aspect('equal')
+        plt.grid(True)
+        plt.title(f"{title}")
+        plt.show()
+        plt.close()
+        
+    def show_info(self):
+        total_num = len(self.element_2D)
+        
+        ### basic info
+        print(f"[Basic Info]:")
+        print(f"    total num: {total_num}")
+        
+        ### comp info
+        print(f"[COMP info]:")
+        for material, comp_id in self.material_table.items():
+            elements = self.element_2D[self.element_2D[:, ELEMENT_COMP_ID] == comp_id]
+            print(f"    {material}: {len(elements)} items")
