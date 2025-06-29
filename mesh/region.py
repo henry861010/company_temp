@@ -1,5 +1,7 @@
 import numpy as np
 import math
+import matplotlib.pyplot as plt
+
 from my_math import *
 
 '''
@@ -100,6 +102,29 @@ class Region:
         self.table_y_dim = table_y_dim
         self.section_num_x = len(section_type)
         self.section_num_y = len(section_type[0])
+        
+    def show_graph(self, x_list: list = [], y_list: list = []):
+        section_array = np.array(self.section_type)
+        X, Y = np.meshgrid(self.table_x_dim, self.table_y_dim)
+
+        plt.figure(figsize=(6, 6))
+        cmap = plt.get_cmap('tab10')
+        plt.pcolormesh(X, Y, section_array.T, cmap=cmap, edgecolors='k', shading='flat')
+
+        # Add vertical lines
+        for x in x_list:
+            plt.plot([x, x], [self.table_y_dim[0], self.table_y_dim[-1]], color='red', linewidth=0.5)
+
+        # Add horizontal lines
+        for y in y_list:
+            plt.plot([self.table_x_dim[0], self.table_x_dim[-1]], [y, y], color='red', linewidth=0.5)
+
+        plt.gca().set_aspect('equal')
+        plt.title("Section Status Map")
+        plt.xlabel("X")
+        plt.ylabel("Y")
+
+        plt.show()
         
     '''
         read the region_struct and set the section_type[i][j] to 2(fill comp) if it is in gap region
@@ -219,100 +244,9 @@ class Region:
         return merged_boundary_list
 
     '''
-        this function return
-    '''
-    def get_mesh_block(self, mask: int = 2):
-        ### get the mesh block
-        mesh_block_list = []
-        ceil_table = [self.section_num_y for _ in self.section_type]
-        reference_node = [False for _ in self.table_x_dim]
-        record_visit = [[False] * len(row) for row in self.section_type]
-        
-        for j in range(0, self.section_num_y):
-            for i in range(0, self.section_num_x):
-                if self.section_type[i][j] & mask and not record_visit[i][j]:
-                    x_list = [] ### record the reference node for this block
-                    y_list = [] ### record the reference node for this block
-                    
-                    ### find the rightest
-                    right = i + 1
-                    while right < self.section_num_x and self.section_type[right][j] & mask:
-                        right += 1
-                        
-                    ### find the ceil of each section (only execute while begin at y)
-                    upper = self.section_num_y
-                    for m in range(i, right):
-                        if j == 0 or not self.section_type[m][j-1] & mask:
-                            ### find the ceil
-                            n = j + 1
-                            while n < self.section_num_y and self.section_type[m][n] & mask:
-                                n += 1
-                            ceil_table[m] = n
-                            
-                        ### find the lowest ceil
-                        upper = min(upper, ceil_table[m])
-                        
-                        ### find the ref x of the ref_line which y between the (j~upper)
-                        print("~~~~~~~~~")
-                    
-                    ### find left wall height (u, if we don't care wall height, the upper would higher than left and right wall)
-                    if i > 1 and not self.section_type[i-1][j] & mask:
-                        n = j + 1
-                        while n < self.section_num_y and not self.section_type[i-1][n] & mask:
-                            n += 1
-                        upper = min(upper, n)
-                    
-                    ### find right wall height
-                    if right != self.section_num_x and not self.section_type[right][j] & mask:
-                        n = j + 1
-                        while n < self.section_num_y and not self.section_type[right][n] & mask:
-                            n += 1
-                        upper = min(upper, n)
-                    
-                    ### determine the reference node
-                    for m in range(i+1, right-1):
-                        ### clear the reference mark if y begin
-                        if j==0 or self.section_type[m][j-1] & mask == 0:
-                            if self.section_type[m-1][j-1] & mask == 0:
-                                reference_node[m] = False
-                            if self.section_type[m+1][j-1] & mask == 0:
-                                reference_node[m+1] = False
-                        
-                        ### set the reference node
-                        if ceil_table[m] != ceil_table[m-1]:
-                            reference_node[m] = True
-                        if ceil_table[m] != ceil_table[m+1]:
-                            reference_node[m+1] = True
-                            
-                    reference_node[i] = True
-                    reference_node[right] = True
-
-                    ### set the visited section to true 
-                    for m in range(i, right):
-                        for n in range(j, upper):
-                            record_visit[m][n] = True
-
-                    ### build the x_list & y_list
-                    y_list = [self.table_y_dim[j], self.table_y_dim[upper]]
-                    x_list = []
-                    for m in range(i, right+1):
-                        if reference_node[m]:
-                            x_list.append(self.table_x_dim[m])
-                            
-                    ### build the block 
-                    mesh_block_list.append([x_list, y_list])
-                    print(f"{i} - {right}")
-                    print(f"{j} - {upper}")
-                    print(reference_node)
-                    print(ceil_table)
-                    print(x_list)
-                    print("")
-        return mesh_block_list
-
-    '''
         clear all target
     '''
-    def region_clear_all(self):
+    def clear_all(self):
         for i in range(len(section_type)):
             for j in range(len(section_type[0])):
                 self.section_type[i][j] = self.section_type[i][j] & ~2
@@ -320,7 +254,7 @@ class Region:
     '''
         find the outline list
     '''
-    def region_get_outline(self, mask = 2):
+    def get_outline(self, mask = 2):
         ### rotate direction
         def rotate(v, degree):
             tolerance = 0.001
@@ -432,3 +366,149 @@ class Region:
                     ### clear the found to prevent the duplicate seach
                     clear_connected_section(section_type, i, j, mask)
         return outline_list_list
+    
+    '''
+        this function return
+    '''
+    def get_mesh_blocks(self, mask: int = 2):
+        ### get the mesh block
+        mesh_block_list = []
+        ceil_table = [self.section_num_y for _ in self.section_type]
+        reference_node = [False for _ in self.table_x_dim]
+        record_visit = [[False] * len(row) for row in self.section_type]
+        
+        for j in range(0, self.section_num_y):
+            for i in range(0, self.section_num_x):
+                if self.section_type[i][j] & mask and not record_visit[i][j]:
+                    x_list = [] ### record the reference node for this block
+                    y_list = [] ### record the reference node for this block
+                    
+                    ### find the rightest
+                    right = i + 1
+                    while right < self.section_num_x and self.section_type[right][j] & mask:
+                        right += 1
+                        
+                    ### find the ceil of each section (only execute while begin at y)
+                    upper = self.section_num_y
+                    for m in range(i, right):
+                        if j == 0 or not self.section_type[m][j-1] & mask:
+                            ### find the ceil
+                            n = j + 1
+                            while n < self.section_num_y and self.section_type[m][n] & mask:
+                                n += 1
+                            ceil_table[m] = n
+                            
+                        ### find the lowest ceil
+                        upper = min(upper, ceil_table[m])
+                        
+                        ### find the ref x of the ref_line which y between the (j~upper)
+                        print("~~~~~~~~~")
+                    
+                    ### find left wall height (u, if we don't care wall height, the upper would higher than left and right wall)
+                    if i > 1 and not self.section_type[i-1][j] & mask:
+                        n = j + 1
+                        while n < self.section_num_y and not self.section_type[i-1][n] & mask:
+                            n += 1
+                        upper = min(upper, n)
+                    
+                    ### find right wall height
+                    if right != self.section_num_x and not self.section_type[right][j] & mask:
+                        n = j + 1
+                        while n < self.section_num_y and not self.section_type[right][n] & mask:
+                            n += 1
+                        upper = min(upper, n)
+                    
+                    ### determine the reference node
+                    for m in range(i+1, right-1):
+                        ### clear the reference mark if y begin
+                        if j==0 or self.section_type[m][j-1] & mask == 0:
+                            if self.section_type[m-1][j-1] & mask == 0:
+                                reference_node[m] = False
+                            if self.section_type[m+1][j-1] & mask == 0:
+                                reference_node[m+1] = False
+                        
+                        ### set the reference node
+                        if ceil_table[m] != ceil_table[m-1]:
+                            reference_node[m] = True
+                        if ceil_table[m] != ceil_table[m+1]:
+                            reference_node[m+1] = True
+                            
+                    reference_node[i] = True
+                    reference_node[right] = True
+
+                    ### set the visited section to true 
+                    for m in range(i, right):
+                        for n in range(j, upper):
+                            record_visit[m][n] = True
+
+                    ### build the x_list & y_list
+                    y_list = [self.table_y_dim[j], self.table_y_dim[upper]]
+                    x_list = []
+                    for m in range(i, right+1):
+                        if reference_node[m]:
+                            x_list.append(self.table_x_dim[m])
+                            
+                    ### build the block 
+                    mesh_block_list.append([x_list, y_list])
+                    print(f"{i} - {right}")
+                    print(f"{j} - {upper}")
+                    print(reference_node)
+                    print(ceil_table)
+                    print(x_list)
+                    print("")
+        return mesh_block_list
+
+    def get_mesh_meshmodel2(self, element_size: float, expanding_num: float, gap: float = 500, ifFixSize: bool = True):
+        x_list = []
+        for i in range(self.section_num_x):
+            for j in range(self.section_num_y):
+                if i-1 >=0 and self.section_type[i-1][j] == 1 and self.section_type[i][j] == 0:
+                    ### find the right
+                    right = i + 1
+                    while right < self.section_num_x and self.section_type[right][j] == 0:
+                        right += 1
+                    
+                    if right != self.section_num_x and f_le(self.table_x_dim[right] - self.table_x_dim[i], gap):
+                        ### add ref point ~ left 
+                        for index in range(expanding_num):
+                            x_list.append(self.table_x_dim[i] - (index + 1) * element_size)
+                        
+                        ### add ref point ~ section
+                        x = self.table_x_dim[i]
+                        while f_lt(x, self.table_x_dim[right]):
+                            x_list.append(x)
+                            x += element_size
+                        x_list.append(self.table_x_dim[right])
+                            
+                        ### add ref point ~ right
+                        for index in range(expanding_num):
+                            x_list.append(self.table_x_dim[right] + (index + 1) * element_size)           
+        x_list = sorted(set(x_list))
+        
+        y_list = []
+        for i in range(self.section_num_x):
+            for j in range(self.section_num_y):
+                if j-1 >=0 and self.section_type[i][j-1] == 1 and self.section_type[i][j] == 0:
+                    ### find the right
+                    upper = j + 1
+                    while upper < self.section_num_y and self.section_type[i][upper] == 0:
+                        upper += 1
+                    
+                    if upper != self.section_num_y and f_le(self.table_y_dim[upper] - self.table_y_dim[j], gap):
+                        ### add ref point ~ left 
+                        for index in range(expanding_num):
+                            y_list.append(self.table_y_dim[j] - (index + 1) * element_size)
+                        
+                        ### add ref point ~ section
+                        y = self.table_y_dim[j]
+                        while f_lt(y, self.table_y_dim[upper]):
+                            y_list.append(y)
+                            y += element_size
+                        y_list.append(self.table_y_dim[upper])
+                            
+                        ### add ref point ~ right
+                        for index in range(expanding_num):
+                            y_list.append(self.table_y_dim[upper] + (index + 1) * element_size)           
+        y_list = sorted(set(y_list))
+        
+        return (x_list, y_list)

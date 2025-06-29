@@ -34,5 +34,7 @@ y_list = [0, 50]
 cdb_obj.build_block(element_size, x_list, y_list)
 cdb_obj.cal_areas()
 cdb_obj.organize(area)
+cdb_obj.drag(5, 10)
 cdb_obj.show_info()
 cdb_obj.show_2d_graph()
+cdb_obj.generate_cdb(path = 'cdb.txt')

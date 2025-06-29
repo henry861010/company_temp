@@ -27,7 +27,7 @@ from my_math import *
             node4_x, node4_y
         }
     ]
-    element_nodes: [
+    element_to_nodes: [
         {
             node1_id
             node2_id
@@ -49,6 +49,12 @@ from my_math import *
         f"{x}-{y}" -> node_id
     materials: [
         material_name
+    ]
+    set: [
+        {
+            name: name
+            ids: []
+        }
     ]
     
     area: {
@@ -87,16 +93,20 @@ ELEMENT_NODE4_X = 9
 ELEMENT_NODE4_Y = 10
 ELEMENT_len = 11
 
+CDB_COMP_ELEM_PER_LINE = 8
+
 class CDB:
     def __init__(self):
         self.components = [] ### [component_name, ... ]
         self.element_2D = np.empty((0, ELEMENT_len), dtype=np.float32)
-        self.element_3D = None
-        self.element_nodes = np.empty((0, 4), dtype=np.int16)
+        self.element_3D = []
+        self.element_to_nodes = np.empty((0, 4), dtype=np.int32)
         self.nodes = np.empty((0, 2), dtype=np.float32)
-        self.material_table = {"EMPTY": 0}
         self.node_map = {}
-        self.z_table = []
+        self.material_table = {"EMPTY": 0}
+        self.z_table = [0]
+        
+        self.sets = []
 
     ### basic model building operation
     def add_node(self, x: float, y: float):
@@ -125,8 +135,8 @@ class CDB:
 
         self.element_2D = np.vstack([self.element_2D, new_element])
 
-        new_element_nodes = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.int16)  # shape (1, 4)
-        self.element_nodes = np.vstack([self.element_nodes, new_element_nodes])
+        new_element_to_nodes = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.int32)  # shape (1, 4)
+        self.element_to_nodes = np.vstack([self.element_to_nodes, new_element_to_nodes])
         
         return element_id
 
@@ -206,32 +216,29 @@ class CDB:
         self.element_2D[target_element_index, ELEMENT_COMP_ID] = self.material_table[area["material"]]
         
     def drag(self, element_size: float, end: float):
-        if self.element_3D is None:
-            self.element_3D = np.empty((0, len(self.element_2D)), dtype=np.int16)
-        if self.element_3D.shape[1] != len(self.element_2D):
-            self.element_3D = np.empty((0, len(self.element_2D)), dtype=np.int16)
-        
-        if len(self.z_table) > 0:
-            z_now = self.z_table[-1]    
-        else:
-            z_now = 0
+        z_now = self.z_table[-1]
         distance = end - z_now
         on_drag = math.ceil(distance/element_size)
         if f_ne(on_drag, distance/element_size):
             element_size = distance / on_drag
+            
+        exist_element_2D = self.element_2D[self.element_2D[:, ELEMENT_COMP_ID] != 0]
         
         ### drag first to end-1
-        for i in range(on_drag - 1):
-            z_now += element_size
-            self.z_table.append(z_now)
-            self.element_3D = np.vstack([self.element_3D, self.element_2D[:,ELEMENT_COMP_ID]])
-        
-        ### drag the last
-        for i in range(on_drag - 1):
-            self.z_table.append(end)
-            self.element_3D = np.vstack([self.element_3D, self.element_2D[:,ELEMENT_COMP_ID]])
+        for i in range(on_drag):
+            ### record z info
+            if i == on_drag - 1:
+                self.z_table.append(end)
+            else:
+                z_now += element_size
+                self.z_table.append(z_now)
             
-    
+            ### add the element
+            if len(exist_element_2D) > 0:
+                self.element_3D.append(exist_element_2D[:,[ELEMENT_ID, ELEMENT_COMP_ID]].astype(np.int32))
+            else:
+                self.element_3D.append([])
+        
     ### wrap operation
     def build_block(self, element_size: float, x_list: list, y_list):
         new_x_list = [x_list[0]]
@@ -373,20 +380,34 @@ class CDB:
         # Store back into column 13
         self.element_2D[:, ELEMENT_AREA] = areas
         
+    def search(self, type: str, node1_x:float, node1_y:float, node1_z:float, node3_x:float, node3_y:float, node3_z:float, tolerance: float = 0.0001):
+        ### if z out of the range z, return []
+        if f_lt(node3_z, self.z_table[0], tolerance):
+            return []
+        if f_lt(self.z_table[-1], node1_z, tolerance):
+            return []
+        
+        bottom_index = 0
+        while f_lt(self.z_table[bottom_index], node1_z, tolerance):
+            bottom_index += 1
+        top_index = len(self.z_table) - 1
+        while f_lt(node3_z, self.z_table[top_index], tolerance):
+            top_index -= 1
+        
     ### CDB format
     def read_CDB(self):
         print("~")
         
     def generate_cdb(self, path: str = 'cdb.txt', element_type: str = "185"):
+        ### due to the "EMPTY"(0) type, there are nodes and elements not exist. so we need the table to record the offset
+        node_offset = np.zeros(self.nodes.shape, dtype=np.int32)
+        np.zeros(self.element_2D.shape, dtype=np.int32)
+        
         with open(path, 'w') as f:
             ### build the nodes
             node_id_offset = 1
             node_id_icr = len(self.nodes)
             f.write(f"nodes:\n")
-            ### now = 0
-            for index, node in enumerate(self.nodes):
-                f.write(f"    {index + node_id_offset}. {node[0]} {node[1]} {0}\n")
-            node_id_offset += node_id_icr
             
             ### the other layer
             for z in self.z_table:
@@ -395,35 +416,44 @@ class CDB:
                 node_id_offset += node_id_icr
                  
             ### build the elements
+            node_id_offset = 1
             node_id_icr = len(self.nodes)
             element_id_offset = 1
-            element_id_icr = len(self.element_2D)
             f.write(f"element:\n")
-            for z in self.z_table:
-                for index, element_node in enumerate(self.element_nodes):
+            for elements in self.element_3D:
+                for index, element in enumerate(elements):
                     id = index + element_id_offset
-                    node1_id = element_node[0] + 1
-                    node2_id = element_node[1] + 1
-                    node3_id = element_node[2] + 1
-                    node4_id = element_node[3] + 1
-                    node5_id = element_node[0] + 1 + node_id_icr
-                    node6_id = element_node[1] + 1 + node_id_icr
-                    node7_id = element_node[2] + 1 + node_id_icr
-                    node8_id = element_node[3] + 1 + node_id_icr
-                    f.write(f"    {id}. {node1_id} {node2_id} {node3_id} {node4_id} {node5_id} {node6_id} {node7_id} {node8_id} \n")
-                element_id_offset += element_id_icr
-            
-            ### build the component
-            for material, comp_id in self.material_table.items():
-                f.write(f"COMP-{material}:\n")
+                    nodes = self.element_to_nodes[element[0]]
+                    node1 = nodes[0] + node_id_offset
+                    node2 = nodes[1] + node_id_offset
+                    node3 = nodes[2] + node_id_offset
+                    node4 = nodes[3] + node_id_offset
+                    node5 = nodes[0] + node_id_offset + node_id_icr
+                    node6 = nodes[1] + node_id_offset + node_id_icr
+                    node7 = nodes[2] + node_id_offset + node_id_icr
+                    node8 = nodes[3] + node_id_offset + node_id_icr
+                    f.write(f"      {id}. {node1} {node2} {node3} {node4} {node5} {node6} {node7} {node8}\n")
+                element_id_offset += len(elements)
+                node_id_offset += node_id_icr
                 
-                element_id_offset = 1
-                element_id_icr = len(self.element_2D)
-                for elements in self.element_3D:
-                    indices = np.where(elements == comp_id)[0]
-                    for index in indices:
-                        f.write(f"      {index + element_id_offset}\n")
-                    element_id_offset += element_id_icr
+            ### build the component
+            line_now = 0
+            for material, comp_id in self.material_table.items():
+                if comp_id != 0:
+                    f.write(f"COMP-{material}:")
+                    
+                    element_id_offset = 1
+                    element_id_icr = len(self.element_2D)
+                    for elements in self.element_3D:
+                        indices = np.where(elements[:,1] == comp_id)[0]
+                        for index in indices:
+                            if line_now == 0:
+                                f.write(f"\n    ")
+                            line_now = (line_now + 1) % CDB_COMP_ELEM_PER_LINE
+                                
+                            f.write(f"{index + element_id_offset} ")
+                        element_id_offset += element_id_icr
+                    f.write(f"\n")
             
     ### Debug
     def show_2d_graph(self, title: str = "2D mesh"):
