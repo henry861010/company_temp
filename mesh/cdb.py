@@ -3,6 +3,7 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from my_math import *
+import time
 
 '''
     element_2D: [
@@ -142,6 +143,7 @@ class CDB:
 
     def organize(self, area: dict):
         # AND each "range" constraint (element must satisfy all range boxes)
+        start = time.time()
         range_masks = []
         for range_info in area["ranges"]:
             if range_info["type"] == "BOX":
@@ -165,7 +167,7 @@ class CDB:
                     (target_elements[:, ELEMENT_NODE3_Y] <= hole_info["dim"][3]))
                 )
         if len(hole_masks) > 0:
-            target_elements = target_elements[np.logical_and.reduce(hole_masks)]    
+            target_elements = target_elements[np.logical_and.reduce(hole_masks)]
         
         ### calculate the area
         total_area = target_elements[:, ELEMENT_AREA].sum()
@@ -185,28 +187,30 @@ class CDB:
             target_elements = target_elements[np.logical_and.reduce(exclude_masks)]
         
         ### assign the metal "NORMAL"
-        np.random.seed(1)
-        np.random.shuffle(target_elements)
-        index = len(target_elements) - 1
-        for metal_info in area["metals"]:
-            if metal_info["type"] == "NORMAL":
-                ### the assigned material
-                if not metal_info["material"] in self.material_table:
-                    new_comp_id = len(self.material_table)
-                    self.material_table[metal_info["material"]] = new_comp_id
-                comp_id = self.material_table[metal_info["material"]]
-                
-                ### begin to assign the metal
-                seleted_area = 0
-                temp_count = 0
-                while index >= 0 and (seleted_area / total_area) < metal_info["density"]/100:
-                    seleted_area += target_elements[index][ELEMENT_AREA]
-                    element_id = int(target_elements[index][ELEMENT_ID])
-                    self.element_2D[element_id][ELEMENT_COMP_ID] = comp_id
-                    index -= 1
-                    temp_count += 1
-        ### the index ~ end was assigned and should be remove from target_elements 
-        target_elements = target_elements[0 : index + 1]
+        ### NOTE: np.random.shuffle is very slow!!!
+        if len(area["metals"]) > 0:
+            np.random.seed(1)
+            np.random.shuffle(target_elements)
+            index = len(target_elements) - 1
+            for metal_info in area["metals"]:
+                if metal_info["type"] == "NORMAL":
+                    ### the assigned material
+                    if not metal_info["material"] in self.material_table:
+                        new_comp_id = len(self.material_table)
+                        self.material_table[metal_info["material"]] = new_comp_id
+                    comp_id = self.material_table[metal_info["material"]]
+                    
+                    ### begin to assign the metal
+                    seleted_area = 0
+                    temp_count = 0
+                    while index >= 0 and (seleted_area / total_area) < metal_info["density"]/100:
+                        seleted_area += target_elements[index][ELEMENT_AREA]
+                        element_id = int(target_elements[index][ELEMENT_ID])
+                        self.element_2D[element_id][ELEMENT_COMP_ID] = comp_id
+                        index -= 1
+                        temp_count += 1
+            ### the index ~ end was assigned and should be remove from target_elements 
+            target_elements = target_elements[0 : index + 1]
                     
         ### assign the material
         if not area["material"] in self.material_table:
@@ -404,6 +408,7 @@ class CDB:
         np.zeros(self.element_2D.shape, dtype=np.int32)
         
         with open(path, 'w') as f:
+            start = time.time()
             ### build the nodes
             node_id_offset = 1
             node_id_icr = len(self.nodes)
@@ -414,6 +419,8 @@ class CDB:
                 for index, node in enumerate(self.nodes):
                     f.write(f"    {index + node_id_offset}. {node[0]} {node[1]} {z}\n")
                 node_id_offset += node_id_icr
+            print(f"  (write node) time: {time.time() - start:.6f} seconds")
+            start = time.time()
                  
             ### build the elements
             node_id_offset = 1
@@ -435,6 +442,8 @@ class CDB:
                     f.write(f"      {id}. {node1} {node2} {node3} {node4} {node5} {node6} {node7} {node8}\n")
                 element_id_offset += len(elements)
                 node_id_offset += node_id_icr
+            print(f"  (write element) time: {time.time() - start:.6f} seconds")
+            start = time.time()
                 
             ### build the component
             line_now = 0
@@ -454,6 +463,8 @@ class CDB:
                             f.write(f"{index + element_id_offset} ")
                         element_id_offset += element_id_icr
                     f.write(f"\n")
+            print(f"  (write comp) time: {time.time() - start:.6f} seconds")
+            start = time.time()
             
     ### Debug
     def show_2d_graph(self, title: str = "2D mesh"):
@@ -484,12 +495,10 @@ class CDB:
         plt.close()
         
     def show_info(self):
-        total_num = len(self.element_2D)
-        
         ### basic info
         print(f"[Basic Info]:")
-        print(f"    total num: {total_num}")
-        
+        print(f"    total 2D elems: {len(self.element_2D)}")
+        print(f"    total 3D elems: {sum([len(row) for row in self.element_3D])}")
         ### comp info
         print(f"[COMP info]:")
         for material, comp_id in self.material_table.items():
