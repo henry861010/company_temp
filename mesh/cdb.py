@@ -423,25 +423,25 @@ class CDB:
             start = time.time()
                  
             ### build the elements
-            node_id_offset = 1
             node_id_icr = len(self.nodes)
             element_id_offset = 1
             f.write(f"element:\n")
+            self.element_to_nodes += 1
             for elements in self.element_3D:
                 for index, element in enumerate(elements):
                     id = index + element_id_offset
                     nodes = self.element_to_nodes[element[0]]
-                    node1 = nodes[0] + node_id_offset
-                    node2 = nodes[1] + node_id_offset
-                    node3 = nodes[2] + node_id_offset
-                    node4 = nodes[3] + node_id_offset
-                    node5 = nodes[0] + node_id_offset + node_id_icr
-                    node6 = nodes[1] + node_id_offset + node_id_icr
-                    node7 = nodes[2] + node_id_offset + node_id_icr
-                    node8 = nodes[3] + node_id_offset + node_id_icr
+                    node1 = nodes[0]
+                    node2 = nodes[1]
+                    node3 = nodes[2]
+                    node4 = nodes[3]
+                    node5 = node1 + node_id_icr
+                    node6 = node2 + node_id_icr
+                    node7 = node3 + node_id_icr
+                    node8 = node4 + node_id_icr
                     f.write(f"      {id}. {node1} {node2} {node3} {node4} {node5} {node6} {node7} {node8}\n")
+                self.element_to_nodes += node_id_icr
                 element_id_offset += len(elements)
-                node_id_offset += node_id_icr
             print(f"  (write element) time: {time.time() - start:.6f} seconds")
             start = time.time()
                 
