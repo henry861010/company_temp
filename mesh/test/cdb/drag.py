@@ -2,8 +2,8 @@ from cdb import *
 
 cdb_obj = CDB()
 element_size = 5
-x_list = [0, 10]
-y_list = [0, 10]
+x_list = [0, 25]
+y_list = [0, 25]
 
 cdb_obj.build_block(element_size, x_list, y_list)
 
@@ -12,10 +12,15 @@ area = {
         "ranges": [
             {
                 "type": "BOX",
-                "dim": [0, 0, 10, 10]
+                "dim": [0, 0, 25, 25]
             }
         ],
-        "holes": [],
+        "holes": [
+            {
+                "type": "BOX",
+                "dim": [5, 5, 20, 20]
+            }    
+        ],
         "metals": []
     }
 cdb_obj.organize(area)

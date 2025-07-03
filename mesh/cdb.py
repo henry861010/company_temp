@@ -3,7 +3,9 @@ import math
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 from my_math import *
+
 import time
+from test.test_util import *
 
 '''
     element_2D: [
@@ -98,24 +100,23 @@ CDB_COMP_ELEM_PER_LINE = 8
 
 class CDB:
     def __init__(self):
-        self.components = [] ### [component_name, ... ]
+        self.components = []
         self.element_2D = np.empty((0, ELEMENT_len), dtype=np.float32)
-        self.element_3D = []
         self.element_to_nodes = np.empty((0, 4), dtype=np.int32)
-        self.nodes = np.empty((0, 2), dtype=np.float32)
+        self.node_2D = np.empty((0, 2), dtype=np.float32)
+        self.element_3D = np.empty((0, 9), dtype=np.int32)
+        
         self.node_map = {}
         self.material_table = {"EMPTY": 0}
         self.z_table = [0]
-        
-        self.sets = []
 
     ### basic model building operation
     def add_node(self, x: float, y: float):
         node_key = f"{x}-{y}"
         if node_key not in self.node_map:
             new_node = np.array([[x, y]], dtype=np.float32)  # shape (1, 2)
-            self.nodes = np.vstack([self.nodes, new_node])
-            node_id = len(self.nodes) - 1
+            self.node_2D = np.vstack([self.node_2D, new_node])
+            node_id = len(self.node_2D) - 1
             self.node_map[node_key] = node_id
             return (node_id, x, y)
         else:
@@ -222,26 +223,39 @@ class CDB:
     def drag(self, element_size: float, end: float):
         z_now = self.z_table[-1]
         distance = end - z_now
-        on_drag = math.ceil(distance/element_size)
-        if f_ne(on_drag, distance/element_size):
-            element_size = distance / on_drag
-            
-        exist_element_2D = self.element_2D[self.element_2D[:, ELEMENT_COMP_ID] != 0]
+        on_drag = math.ceil(distance / element_size)
         
-        ### drag first to end-1
+        # Adjust element size if not evenly divisible
+        if f_ne(on_drag, distance / element_size):
+            element_size = distance / on_drag
+
+        # Step 1: Get non-empty 2D elements
+        non_empty_mask = self.element_2D[:, ELEMENT_COMP_ID] != 0
+        element_comp_list = self.element_2D[non_empty_mask][:, ELEMENT_COMP_ID]
+        element_nodes_list = self.element_to_nodes[non_empty_mask]
+
+        k = len(element_comp_list)
+        if k == 0:
+            return  # No elements to extrude
+
+        # Step 2: Precompute all extruded elements
+        original_node_count = len(self.node_2D)
+        all_new_elements = []
+
         for i in range(on_drag):
-            ### record z info
-            if i == on_drag - 1:
-                self.z_table.append(end)
-            else:
-                z_now += element_size
-                self.z_table.append(z_now)
-            
-            ### add the element
-            if len(exist_element_2D) > 0:
-                self.element_3D.append(exist_element_2D[:,[ELEMENT_ID, ELEMENT_COMP_ID]].astype(np.int32))
-            else:
-                self.element_3D.append([])
+            offset = i * original_node_count
+            lower_nodes = element_nodes_list + offset
+            upper_nodes = element_nodes_list + offset + original_node_count
+            merged = np.hstack((element_comp_list[:, None], lower_nodes, upper_nodes)).astype(int)  # (k, 9)
+            all_new_elements.append(merged)
+
+        all_new_elements = np.vstack(all_new_elements)  # (k * on_drag, 9)
+        self.element_3D = np.vstack((self.element_3D, all_new_elements))
+        
+
+        # Step 4: Update z_table
+        new_rows = [z_now + (i+1) * element_size for i in range(on_drag)]
+        self.z_table += new_rows
         
     ### wrap operation
     def build_block(self, element_size: float, x_list: list, y_list):
@@ -385,86 +399,44 @@ class CDB:
         self.element_2D[:, ELEMENT_AREA] = areas
         
     def search(self, type: str, node1_x:float, node1_y:float, node1_z:float, node3_x:float, node3_y:float, node3_z:float, tolerance: float = 0.0001):
-        ### if z out of the range z, return []
-        if f_lt(node3_z, self.z_table[0], tolerance):
-            return []
-        if f_lt(self.z_table[-1], node1_z, tolerance):
-            return []
-        
-        bottom_index = 0
-        while f_lt(self.z_table[bottom_index], node1_z, tolerance):
-            bottom_index += 1
-        top_index = len(self.z_table) - 1
-        while f_lt(node3_z, self.z_table[top_index], tolerance):
-            top_index -= 1
+        print("~~~~~")
         
     ### CDB format
     def read_CDB(self):
         print("~")
         
     def generate_cdb(self, path: str = 'cdb.txt', element_type: str = "185"):
-        ### due to the "EMPTY"(0) type, there are nodes and elements not exist. so we need the table to record the offset
-        node_offset = np.zeros(self.nodes.shape, dtype=np.int32)
-        np.zeros(self.element_2D.shape, dtype=np.int32)
-        
-        with open(path, 'w') as f:
-            start = time.time()
-            ### build the nodes
-            node_id_offset = 1
-            node_id_icr = len(self.nodes)
-            f.write(f"nodes:\n")
-            
-            ### the other layer
-            for z in self.z_table:
-                for index, node in enumerate(self.nodes):
-                    f.write(f"    {index + node_id_offset}. {node[0]} {node[1]} {z}\n")
-                node_id_offset += node_id_icr
-            print(f"  (write node) time: {time.time() - start:.6f} seconds")
-            start = time.time()
-                 
-            ### build the elements
-            node_id_icr = len(self.nodes)
-            element_id_offset = 1
-            f.write(f"element:\n")
-            self.element_to_nodes += 1
-            for elements in self.element_3D:
-                for index, element in enumerate(elements):
-                    id = index + element_id_offset
-                    nodes = self.element_to_nodes[element[0]]
-                    node1 = nodes[0]
-                    node2 = nodes[1]
-                    node3 = nodes[2]
-                    node4 = nodes[3]
-                    node5 = node1 + node_id_icr
-                    node6 = node2 + node_id_icr
-                    node7 = node3 + node_id_icr
-                    node8 = node4 + node_id_icr
-                    f.write(f"      {id}. {node1} {node2} {node3} {node4} {node5} {node6} {node7} {node8}\n")
-                self.element_to_nodes += node_id_icr
-                element_id_offset += len(elements)
-            print(f"  (write element) time: {time.time() - start:.6f} seconds")
-            start = time.time()
-                
-            ### build the component
-            line_now = 0
-            for material, comp_id in self.material_table.items():
-                if comp_id != 0:
-                    f.write(f"COMP-{material}:")
-                    
-                    element_id_offset = 1
-                    element_id_icr = len(self.element_2D)
-                    for elements in self.element_3D:
-                        indices = np.where(elements[:,1] == comp_id)[0]
-                        for index in indices:
-                            if line_now == 0:
-                                f.write(f"\n    ")
-                            line_now = (line_now + 1) % CDB_COMP_ELEM_PER_LINE
-                                
-                            f.write(f"{index + element_id_offset} ")
-                        element_id_offset += element_id_icr
-                    f.write(f"\n")
-            print(f"  (write comp) time: {time.time() - start:.6f} seconds")
-            start = time.time()
+        show_memory_CDB(pre_s = "   (begin generate)")
+        ### Step 1: Renumber the node IDs and map into a new element array
+        element_3D_mapped = self.element_3D.copy()
+        show_memory_CDB(pre_s = "   (build node map ~ 1)")
+
+        # Flatten all node references in element data
+        ref_node_ids = element_3D_mapped[:, 1:9].ravel()
+        show_memory_CDB(pre_s = "   (build node map ~ 2)")
+
+        # Find unique node IDs that are actually used
+        unique_node_ids = np.unique(ref_node_ids)
+        show_memory_CDB(pre_s = "   (build node map ~ 3)")
+
+        # Build mapping table from old node ID → new compact ID
+        node_id_table = np.full(self.node_2D.shape[0] * len(self.z_table), -1, dtype=np.int32)
+        show_memory_CDB(pre_s = "   (build node map ~ 4)")
+        node_id_table[unique_node_ids] = np.arange(len(unique_node_ids))
+        show_memory_CDB(pre_s = "   (build node map)")
+
+        # Apply mapping to the copied element array
+        element_3D_mapped[:, 1:9] = node_id_table[element_3D_mapped[:, 1:9]]
+        show_memory_CDB(pre_s = "   (elements)")
+
+        ### Step 2: Build the full 3D node array 
+        xy_repeated = np.tile(self.node_2D, (len(self.z_table), 1))  # shape: (n*h, 2)
+        z_repeated = np.repeat([z for z in self.z_table], len(self.node_2D))[:, np.newaxis]  # shape: (n*h, 1)
+        node_3D_full = np.hstack((xy_repeated, z_repeated))  # shape: (n*h, 3)
+        show_memory_CDB(pre_s = "   (nodes)")
+
+        ### Step 3: Filter to only referenced nodes
+        node_3D = node_3D_full[unique_node_ids]  # only keep used node IDs
             
     ### Debug
     def show_2d_graph(self, title: str = "2D mesh"):
@@ -498,7 +470,7 @@ class CDB:
         ### basic info
         print(f"[Basic Info]:")
         print(f"    total 2D elems: {len(self.element_2D)}")
-        print(f"    total 3D elems: {sum([len(row) for row in self.element_3D])}")
+        print(f"    total 3D elems: {len(self.element_3D)}")
         ### comp info
         print(f"[COMP info]:")
         for material, comp_id in self.material_table.items():

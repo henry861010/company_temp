@@ -2,7 +2,8 @@ from cdb import *
 import time
 from test.test_util import *
 
-num = 300
+num = 500
+drag_len = 300
 cdb_obj = CDB()
 element_size = 1
 x_list = [0, num]
@@ -37,7 +38,7 @@ print("")
 
 ### drag 3D
 start = time.time()
-cdb_obj.drag(1, num/10)
+cdb_obj.drag(1, drag_len)
 end = time.time()
 print(f"[3D mesh] time: {end - start:.6f} seconds")
 show_memory_CDB(cdb_obj)
