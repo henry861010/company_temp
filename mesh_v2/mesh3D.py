@@ -300,9 +300,6 @@ class Mesh3D:
         print("~~~~~")
         
     ### CDB format
-    def read_CDB(self):
-        print("~")
-        
     def renumber(self):
         ### Flatten all node references in element data, and get the unique id
         ref_node_ids = self.element_3D[:, 1:9].ravel()
@@ -319,36 +316,46 @@ class Mesh3D:
         node_3D_full = np.hstack((xy_repeated, z_repeated))
         self.node_3D = node_3D_full[used_node_ids]
         
+    def merge(self, obj2: 'Mesh3D', interfaces: list = None):
+        if interfaces is None:
+            # 1. Extract all used node IDs
+            ids_1 = np.unique(self.element_3D_1[:, 1:])
+            ids_2 = np.unique(self.element_3D_2[:, 1:])
+
+            coords_1 = self.node_3D[ids_1]
+            coords_2 = self.node_3D[ids_2]
+
+            # 2. Combine both and find unique coordinates with deduplication
+            all_coords = np.vstack((coords_1, coords_2))
+            all_ids = np.hstack((ids_1, ids_2))
+
+            # Round coordinates to avoid float precision issues (optional but safer)
+            rounded = np.round(all_coords, decimals=6)
+
+            # 3. Use np.unique to find shared nodes and get canonical index
+            unique_coords, inverse_indices = np.unique(rounded, axis=0, return_inverse=True)
+
+            # Build final mapping from original node id → unified id
+            # We assign priority to ids_1 by keeping the first occurrence
+            _, first_occurrence_indices = np.unique(inverse_indices, return_index=True)
+            canonical_ids = all_ids[first_occurrence_indices]  # shape (len(unique_coords),)
+
+            # 4. Build full mapping table: original id → canonical id
+            mapping_table = np.full(self.node_3D.shape[0], -1, dtype=np.int32)
+            mapping_table[all_ids] = canonical_ids[inverse_indices]
+
+            # 5. Remap element_3D_2
+            self.element_3D_2[:, 1:] = mapping_table[self.element_3D_2[:, 1:]]
+        else:
+            for interface in interfaces:
+                
+        
+    def read_CDB(self):
+        print("~")
+         
     def generate_cdb(self, path: str = 'cdb.txt', element_type: str = "185"):
         print("generate CDB")
-            
-    ### Debug
-    def show_2d_graph(self, title: str = "2D mesh"):
-        material_to_color = {
-            index: cm.tab20(index / max(1, len(self.material_table) - 1)) for material, index in self.material_table.items()
-        }
-        for element in self.element_2D:
-            x_coords = [
-                element[ELEMENT_NODE1_X],
-                element[ELEMENT_NODE2_X],
-                element[ELEMENT_NODE3_X],
-                element[ELEMENT_NODE4_X]
-            ]
-            y_coords = [
-                element[ELEMENT_NODE1_Y],
-                element[ELEMENT_NODE2_Y],
-                element[ELEMENT_NODE3_Y],
-                element[ELEMENT_NODE4_Y]
-            ]
-            color = material_to_color[element[ELEMENT_COMP_ID]]
-            
-            plt.fill(x_coords, y_coords, color=color, edgecolor='black')
-
-        plt.gca().set_aspect('equal')
-        plt.grid(True)
-        plt.title(f"{title}")
-        plt.show()
-        plt.close()
+        
         
     def show_info(self):
         ### basic info

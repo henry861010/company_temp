@@ -20,3 +20,12 @@ def f_le(a: float, b: float, tolerance: float = 0.0001):
 
 def f_isInt(a: float, tolerance: float = 0.0001):
     return isinstance(a, (int, float)) and math.isclose(a, round(a), abs_tol=tolerance)
+
+def f_eq(a: float, b: float, tolerance: float = 0.00001):
+    return abs(a - b) < tolerance
+
+def f_zero(a: float, tolerance: float = 0.00001):
+    if abs(a) < tolerance:
+        return 0
+    else:
+        return a
