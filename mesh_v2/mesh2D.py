@@ -7,117 +7,26 @@ from my_math import *
 import time
 from test.test_util import *
 
-'''
-    element_2D: [
-        {
-            element_id,
-            comp_id,
-            area,
-            node1_x, node1_y,
-            node2_x, node2_y,
-            node3_x, node3_y,
-            node4_x, node4_y
-        }
-    ]
-    element_2D: [
-        {
-            element_id,
-            comp_id,
-            area,
-            node1_x, node1_y,
-            node2_x, node2_y,
-            node3_x, node3_y,
-            node4_x, node4_y
-        }
-    ]
-    element_to_nodes: [
-        {
-            node1_id
-            node2_id
-            node3_id
-            node4_id
-        }
-    ]
-    element_areas: [
-        area
-    ]
-
-    nodes: [
-        {
-            node_x, 
-            node_y
-        }
-    ]
-    node_map: {}
-        f"{x}-{y}" -> node_id
-    materials: [
-        material_name
-    ]
-    set: [
-        {
-            name: name
-            ids: []
-        }
-    ]
-    
-    area: {
-        material
-        ranges: [
-            {
-                type: BOX/CONE
-                dim: []
-            }
-        ]
-        holes: [
-            {
-                type: BOX/CONE
-                dim: []
-            }
-        ]
-        metals: [
-            {
-                material
-                type: NORMAL / CONTINUE
-                density: 
-            }
-        ]
-    }
-'''
-ELEMENT_ID = 0
-ELEMENT_COMP_ID = 1
-ELEMENT_AREA = 2
-ELEMENT_NODE1_X = 3
-ELEMENT_NODE1_Y = 4
-ELEMENT_NODE2_X = 5
-ELEMENT_NODE2_Y = 6
-ELEMENT_NODE3_X = 7
-ELEMENT_NODE3_Y = 8
-ELEMENT_NODE4_X = 9
-ELEMENT_NODE4_Y = 10
-ELEMENT_len = 11
-
-CDB_COMP_ELEM_PER_LINE = 8
-
 class Mesh2D:
     def __init__(self):
         ### process
-        self.element_2D = np.empty((0, ELEMENT_len), dtype=np.float32)
-        self.element_to_nodes = np.empty((0, 4), dtype=np.int32)
+        self.element_2D = np.empty((0, 4), dtype=np.int32)
         self.node_2D = np.empty((0, 2), dtype=np.float32)
         
         ### others
         self.node_map = {}
-        self.material_table = {"EMPTY": 0}
-        self.z_table = [0]
+        self.node_num = 0
+        self.element_num = 0
 
     ### basic model building operation
     def add_node(self, x: float, y: float):
         node_key = f"{x}-{y}"
         if node_key not in self.node_map:
             new_node = np.array([[x, y]], dtype=np.float32)  # shape (1, 2)
-            self.node_2D = np.vstack([self.node_2D, new_node])
-            node_id = len(self.node_2D) - 1
+            node_id = self.node_num
+            self.node_2D[node_id] = new_node
             self.node_map[node_key] = node_id
+            self.node_num += 1
             return (node_id, x, y)
         else:
             return (self.node_map[node_key], x, y)
@@ -129,19 +38,40 @@ class Mesh2D:
         node4_id, node4_x, node4_y = self.add_node(*node4_dim)
 
         element_id = len(self.element_2D)
-        new_element = np.array([[element_id, comp_id, 0,
-                                node1_x, node1_y,
-                                node2_x, node2_y,
-                                node3_x, node3_y,
-                                node4_x, node4_y]], dtype=np.float32)  # shape (1, 10)
+        new_element = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.int32)  # shape (1, 10)
 
-        self.element_2D = np.vstack([self.element_2D, new_element])
-
-        new_element_to_nodes = np.array([[node1_id, node2_id, node3_id, node4_id]], dtype=np.int32)  # shape (1, 4)
-        self.element_to_nodes = np.vstack([self.element_to_nodes, new_element_to_nodes])
+        element_id =  self.element_num
+        self.element_2D[element_id] = new_element
+        self.element_num += 1
         
         return element_id
 
+    def pre_allocate_nodes(self, size: int = 1):
+        '''
+        Exponential growth (1.5x) is a standard amortized allocation method (like Python lists or C++ vectors).
+        This avoids frequent resizing for small additions, keeping total reallocation count logarithmic in size.
+        Keeps allocation tight when near expected final size.
+        '''
+        required = self.node_num + size
+        current_capacity = len(self.node_2D)
+        if required > current_capacity:
+            new_capacity = max(required, int(current_capacity * 1.5))
+            extra = new_capacity - current_capacity
+            self.node_2D = np.vstack([self.node_2D, np.empty((extra, 2), dtype=np.float32)])
+
+    def pre_allocate_elements(self, size: int = 1):
+        '''
+        Exponential growth (1.5x) is a standard amortized allocation method (like Python lists or C++ vectors).
+        This avoids frequent resizing for small additions, keeping total reallocation count logarithmic in size.
+        Keeps allocation tight when near expected final size.
+        '''
+        required = self.element_num + size
+        current_capacity = len(self.element_2D)
+        if required > current_capacity:
+            new_capacity = max(required, int(current_capacity * 1.5))
+            extra = new_capacity - current_capacity
+            self.element_2D = np.vstack([self.element_2D, np.empty((extra, 4), dtype=np.int32)])
+        
     ### wrap operation
     def build_block(self, element_size: float, x_list: list, y_list):
         new_x_list = [x_list[0]]
@@ -166,6 +96,7 @@ class Mesh2D:
             new_y_list.append(y_list[i])
             
         ### begin to build the checkerboard
+        '''
         for i in range(1, len(new_x_list)):
             x_pre = new_x_list[i-1]
             x_post = new_x_list[i]
@@ -174,7 +105,70 @@ class Mesh2D:
                 y_post = new_y_list[j]
                 #print([x_pre, y_pre], [x_pre, y_post], [x_post, y_post], [x_post, y_pre])
                 self.add_element([x_pre, y_pre], [x_pre, y_post], [x_post, y_post], [x_post, y_pre])      
-    
+        '''
+        ### Build first (left), last (right), top, and bottom node lists
+        coodinate_node_list = np.empty((len(new_y_list), 2), dtype=np.float32)
+
+        # First column (left boundary)
+        f_node_list = np.empty(len(new_y_list), dtype=np.int32)
+        for i, y in enumerate(new_y_list):
+            f_node_list[i] = self.add_node(new_x_list[0], y)
+            coodinate_node_list[i] = [new_x_list[0], y]
+
+        # Last column (right boundary)
+        l_node_list = np.empty(len(new_y_list), dtype=np.int32)
+        for i, y in enumerate(new_y_list):
+            l_node_list[i] = self.add_node(new_x_list[-1], y)
+
+        # Top row (top boundary)
+        t_node_list = np.empty(len(new_x_list), dtype=np.int32)
+        top_y = new_y_list[-1]
+        for i, x in enumerate(new_x_list):
+            t_node_list[i] = self.add_node(x, top_y)
+
+        # Bottom row (bottom boundary)
+        b_node_list = np.empty(len(new_x_list), dtype=np.int32)
+        bottom_y = new_y_list[0]
+        for i, x in enumerate(new_x_list):
+            b_node_list[i] = self.add_node(x, bottom_y)
+
+        ### Begin to build the blocks
+        pre_node_list = f_node_list
+        for index, x in enumerate(new_x_list[1:], start=1):  # Skip first and last
+            if index < len(new_x_list)-1:
+                # Build post_node_list
+                post_node_list = np.empty(len(new_y_list), dtype=np.int32)
+
+                # Interior nodes (excluding bottom and top)
+                inner_count = len(new_y_list) - 2
+                post_node_list[1:-1] = np.arange(inner_count, dtype=np.int32) + self.node_num
+
+                # Set boundary node ids from bottom and top
+                post_node_list[0] = b_node_list[index]
+                post_node_list[-1] = t_node_list[index]
+
+                # Set coordinates for interior nodes
+                coodinate_node_list[1:-1, 0] = x
+                coodinate_node_list[1:-1, 1] = new_y_list[1:-1]
+                self.node_2D[self.node_num:self.node_num+inner_count] = coodinate_node_list[1:-1]
+                self.node_num += inner_count
+            else:
+                post_node_list = l_node_list
+
+            # Stack all elements at once
+            elems = np.stack([
+                pre_node_list[:-1],
+                pre_node_list[1:],
+                post_node_list[1:],
+                post_node_list[:-1]
+            ], axis=1)
+            new_element_num = len(new_y_list) - 1
+            self.element_2D[self.element_num:self.element_num+new_element_num] = elems
+            self.element_num += new_element_num
+
+            # Update for next iteration
+            pre_node_list = post_node_list
+            
     def build_blocks(self, element_size: float, section_type: list, table_x_dim: list, table_y_dim: list):
         ceil_table = [10000000 for _ in section_type]
         reference_node = [False for _ in table_x_dim]
@@ -280,20 +274,19 @@ class Mesh2D:
         }
         for element in self.element_2D:
             x_coords = [
-                element[ELEMENT_NODE1_X],
-                element[ELEMENT_NODE2_X],
-                element[ELEMENT_NODE3_X],
-                element[ELEMENT_NODE4_X]
+                self.node_2D[element[0]][0],
+                self.node_2D[element[1]][0],
+                self.node_2D[element[2]][0],
+                self.node_2D[element[3]][0]
             ]
             y_coords = [
-                element[ELEMENT_NODE1_Y],
-                element[ELEMENT_NODE2_Y],
-                element[ELEMENT_NODE3_Y],
-                element[ELEMENT_NODE4_Y]
+                self.node_2D[element[0]][1],
+                self.node_2D[element[1]][1],
+                self.node_2D[element[2]][1],
+                self.node_2D[element[3]][1]
             ]
-            color = material_to_color[element[ELEMENT_COMP_ID]]
             
-            plt.fill(x_coords, y_coords, color=color, edgecolor='black')
+            plt.fill(x_coords, y_coords, edgecolor='black')
             
         for line in pattern_lines:
             x_vals = [line[0][0], line[-1][0]]
