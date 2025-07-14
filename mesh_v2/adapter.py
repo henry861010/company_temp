@@ -787,143 +787,118 @@ def cal_expanding(element_size, pattern_lines_x, pattern_lines_y, outline):
     return expand
 
 def build_layer(cdb_obj: 'Mesh2D', element_size: int, pattern_lines_x: list, pattern_lines_y: list, expanding_list: list, outline_list: list):
-    '''
-        [left inner/outer] - [right inner/outer]/[next inner/outer]
-    '''
     new_outline_list = []
     
-    ### use index of outline, where the left corner is inner corner, as begin
-    now = 0
-    while True:
-        direction_pre_90 = rotate(get_direction(outline_list[now-1]), 90)
-        direction = get_direction(outline_list[now])
+    ### outer ncorner
+    direction_pre_90 = rotate(get_direction(outline_list[-1]), 90)
+    direction_now = get_direction(outline_list[0])
+    if direction_pre_90 == direction_now:
+        node1_x = outline_list[0][0][0] + expanding_list[-1][0]
+        node1_y = outline_list[0][0][1] + expanding_list[-1][1]
+        node2_x = outline_list[0][0][0] + expanding_list[-1][0] + expanding_list[0][0]
+        node2_y = outline_list[0][0][1] + expanding_list[-1][1] + expanding_list[0][1]
+        node3_x = outline_list[0][0][0] + expanding_list[0][0]
+        node3_y = outline_list[0][0][1] + expanding_list[0][1]
+        node4_x = outline_list[0][0][0]
+        node4_y = outline_list[0][0][1]
+        
+        temp_edge1 = [[node1_x, node1_y], [node2_x, node2_y]]
+        temp_edge2 = [[node2_x, node2_y], [node3_x, node3_y]]
+        temp_edge3 = [[node4_x, node4_y], [node3_x, node3_y]]
+        temp_edge4 = [[node1_x, node1_y], [node4_x, node4_y]]
+        
+        res_corner = build_block(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+        next_edge1 = res_corner[2]
+        next_left_outer_node_list = res_corner[1]
+        last_edge3 = res_corner[3][::-1]
+        last_right_outer_node_list = res_corner[0]
+    else:
+        node1_x = outline_list[0][0][0]
+        node1_y = outline_list[0][0][1]
+        node3_x = outline_list[0][0][0] + expanding_list[-1][0] + expanding_list[0][0]
+        node3_y = outline_list[0][0][1] + expanding_list[-1][1] + expanding_list[0][1]
+        node2_index = nearby([node3_x, node3_y], outline_list[-1])
+        node4_index = nearby([node3_x, node3_y], outline_list[0])
 
-        if direction_pre_90 == direction:
-            ### node 2
-            temp_x = outline_list[now][0][0] + expanding_list[now][0] + expanding_list[now-1][0]
-            temp_y = outline_list[now][0][1] + expanding_list[now][1] + expanding_list[now-1][1]
-            node2 = [temp_x, temp_y]
-            
-            ### node 3
-            temp_x = outline_list[now][0][0] + expanding_list[now][0]
-            temp_y = outline_list[now][0][1] + expanding_list[now][1]
-            node3 = [temp_x, temp_y]
-            
-            ### node 4
-            node4 = outline_list[now][0]
-            
-            edge1 = [node4, node3]
-            pre_node_list = [node2, node3]
-            break
-        else:
-            now += 1
-    
-    for _ in range(len(outline_list)):
-        now = now % len(outline_list)
-        pre = (len(outline_list) + now - 1) % len(outline_list)
-        post = (now + 1) % len(outline_list)
-        new_outline = pre_node_list
+        temp_edge1 = outline_list[-1][node2_index:][::-1]
+        temp_edge2 = [outline_list[-1][node2_index], [node3_x, node3_y]]
+        temp_edge3 = [outline_list[0][node4_index], [node3_x, node3_y]]
+        temp_edge4 = outline_list[0][0:node2_index+1]
         
-        ### identity the type of the right corner
-        direction_post_90 = rotate(get_direction(outline_list[post]), 90)
-        direction = get_direction(outline_list[now])
-        if direction == direction_post_90:
-            right_corner_type = "INNER"
-        else:
-            right_corner_type = "OUTER"
+        res_corner = build_unit_corner(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+        next_edge1 = res_corner[2]
+        next_left_outer_node_list = []
+        last_edge3 = res_corner[1]
+        last_right_outer_node_list = []
         
-        ### left outer/inner node
-        left_outer_node = edge1[-1]
-        left_inner_index = nearby(left_outer_node, outline_list[now])
+    for i, outline in enumerate(outline_list):
+        post = (i + 1) % len(outline_list)
+        direction_post_270 = rotate(get_direction(outline_list[post]), 270)
+        direction_now = get_direction(outline_list[i])
         
-        ### right outer/inner corner
-        if right_corner_type == "INNER":
-            ### right inner/outer node
-            temp_x = outline_list[now][-1][0] + expanding_list[now][0] + expanding_list[post][0]
-            temp_y = outline_list[now][0-1][1] + expanding_list[now][1] + expanding_list[post][1]
-            right_outer_node = [temp_x, temp_y]
-            right_inner_index = nearby(right_outer_node, outline_list[now])
-            right_inner_node = outline_list[now][right_inner_index]
+        center_edge1 = next_edge1
+        center_left_outer_node_list = next_left_outer_node_list
+        
+        ### build the right corner
+        if i == len(outline_list)-1:
+            center_edge3 = last_edge3
+            center_right_outer_node_list = last_right_outer_node_list
+        elif direction_pre_270 == direction_now:
+            ### outer corner
+            node1_x = outline_list[i][-1][0]
+            node1_y = outline_list[i][-1][1]
+            node2_x = outline_list[i][-1][0] + expanding_list[i][0]
+            node2_y = outline_list[i][-1][1] + expanding_list[i][1]
+            node3_x = outline_list[i][-1][0] + expanding_list[i][0] + expanding_list[post][0]
+            node3_y = outline_list[i][-1][1] + expanding_list[i][1] + expanding_list[post][1]
+            node4_x = outline_list[i][-1][0] + expanding_list[post][0]
+            node4_y = outline_list[i][-1][1] + expanding_list[post][1]
             
-            ### next inner node
-            next_inner_index = nearby(right_outer_node, outline_list[post])
-            next_inner_node = outline_list[post][next_inner_index]
+            temp_edge1 = [[node1_x, node1_y], [node2_x, node2_y]]
+            temp_edge2 = [[node2_x, node2_y], [node3_x, node3_y]]
+            temp_edge3 = [[node4_x, node4_y], [node3_x, node3_y]]
+            temp_edge4 = [[node1_x, node1_y], [node4_x, node4_y]]
             
-            ### build the right corner
-            if not equal_node(edge1[0], right_inner_node):
-                temp_edge1 = [right_inner_node, right_outer_node]
-            else:
-                temp_edge1 = edge1
-            temp_edge2 = [right_outer_node, next_inner_node]
-            temp_edge3 = outline_list[post][0:next_inner_index+1]
-            temp_edge4 = outline_list[now][right_inner_index:]
-            res_corner = build_unit_corner(cdb_obj, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
-            pre_node_list = [temp_edge1[-1]]
-            
-            ### build the center block
-            if not equal_node(edge1[0], right_inner_node):
-                temp_edge1 = edge1
-                temp_edge2 = [edge1[-1], res_corner[0][-1]]
-                temp_edge3 = res_corner[0]
-                temp_edge4 = outline_list[now][left_inner_index:right_inner_index+1]
-                res_block = build_block_pattern(cdb_obj, element_size, pattern_lines_x, pattern_lines_y, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
-                ### update new_outline
-                new_outline = new_outline +  res_block[1][1:]
-            edge1 = res_corner[1]
-            edge1.reverse()
-        else:
-            ### right node1
-            right_node1 = outline_list[now][-1]
-            
-            ### right node2
-            temp_x = outline_list[now][-1][0] + expanding_list[now][0]
-            temp_y = outline_list[now][-1][1] + expanding_list[now][1]
-            right_node2 = [temp_x, temp_y]
-            
-            ### right node3
-            temp_x = outline_list[now][-1][0] + expanding_list[now][0] + expanding_list[post][0]
-            temp_y = outline_list[now][-1][1] + expanding_list[now][1] + expanding_list[post][1]
-            right_node3 = [temp_x, temp_y]
-            
-            ### right node4
-            temp_x = outline_list[now][-1][0] + expanding_list[post][0]
-            temp_y = outline_list[now][-1][1] + expanding_list[post][1]
-            right_node4 = [temp_x, temp_y]
-            
-            ### left corner
-            left_outer_node = edge1[-1]
-            left_inner_index = nearby(left_outer_node, outline_list[now])
-            
-            ### build the right corner
-            if not equal_node(edge1[0], right_node1):
-                temp_edge1 = [right_node1, right_node2]
-            else:
-                temp_edge1 = edge1
-            temp_edge2 = [right_node2, right_node3]
-            temp_edge3 = [right_node4, right_node3]
-            temp_edge4 = [right_node1, right_node4]
             res_corner = build_block(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+            next_edge1 = res_corner[3]
+            next_left_outer_node_list = res_corner[2][::-1]
+            center_edge3 = res_corner[0]
+            center_right_outer_node_list = res_corner[1]
+        else:
+            ### inner corner
+            node2_x = outline_list[i][-1][0] + expanding_list[i][0] + expanding_list[post][0]
+            node2_y = outline_list[i][-1][1] + expanding_list[i][1] + expanding_list[post][1]
+            node4_x = outline_list[i][-1][0]
+            node4_y = outline_list[i][-1][1]
+            node1_index = nearby([node2_x, node2_y], outline_list[i])
+            node3_index = nearby([node2_x, node2_y], outline_list[post])
             
-            ### build the center block
-            if not equal_node(edge1[0], right_node1):
-                temp_edge1 = edge1
-                temp_edge2 = [edge1[-1], right_node2]
-                temp_edge3 = res_corner[0]
-                temp_edge4 = outline_list[now][left_inner_index:]
-                res_block = build_block_pattern(cdb_obj, element_size, pattern_lines_x, pattern_lines_y, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
-                
-                ### update new_outline
-                new_outline = new_outline +  res_block[1][1:]
+            temp_edge1 = [[node1_x, node1_y], [node2_x, node2_y]]
+            temp_edge2 = [[node2_x, node2_y], [node3_x, node3_y]]
+            temp_edge3 = outline_list[post][0:node3_index+1]
+            temp_edge4 = outline_list[i][node1_index:]
             
-            new_outline = new_outline +  res_corner[1][1:]
-            pre_node_list = res_corner[2]
-            pre_node_list.reverse()
-            edge1 = res_corner[3]
+            res_corner = build_unit_corner(cdb_obj, element_size, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+            next_edge1 = res_corner[1][::-1]
+            next_left_outer_node_list = []
+            center_edge3 = res_corner[0]
+            center_right_outer_node_list = []
             
-        ### update the new_outline_list
-        new_outline_list.append(new_outline)
-
-        now += 1
+        ### build the center part
+        center_node2_index = nearby(center_edge1[-1], outline_list[i])
+        center_node3_index = nearby(center_edge3[-1], outline_list[i])
+        
+        if not equal_node(center_edge1[-1], center_edge3[-1]):
+            temp_edge1 = center_edge1
+            temp_edge2 = [center_edge1[-1], center_edge3[-1]]
+            temp_edge3 = center_edge3
+            temp_edge4 = outline_list[center_node2_index:center_node3_index+1]
+            res_block = build_block_pattern(cdb_obj, element_size, pattern_lines_x, pattern_lines_y, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+            center_node_list = res_block[1]
+        else:
+            center_node_list = []
+        
+        new_outline_list.appned(center_left_outer_node_list + center_node_list + center_right_outer_node_list)
     return new_outline_list
 
 def build_layers(cdb_obj: 'Mesh2D', element_sizes: list, pattern_lines_x: list, pattern_lines_y: list, outline_list: list):
