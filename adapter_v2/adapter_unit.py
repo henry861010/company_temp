@@ -202,3 +202,67 @@ def build_unit_x_1_1_y(cdb_obj: 'Mesh2D', edge1: list, edge2: list, edge3: list,
             ### left
             cdb_obj.add_element(vector2[i-1], vector2[i], vector3[i], vector3[i-1])    
     return [origin_edge1, origin_edge2, origin_edge3, origin_edge4]    
+
+def build_unit_x_y_z_1(cdb_obj: 'Mesh2D', edge1: list, edge2: list, edge3: list, edge4: list):
+    origin_edge1 = edge1
+    origin_edge2 = edge2
+    origin_edge3 = edge3
+    origin_edge4 = edge4
+    if len(edge1) ==2:
+        edge4 = origin_edge1[::-1]
+        edge1 = origin_edge2
+        edge2 = origin_edge3[::-1]
+        edge3 = origin_edge4
+    elif len(edge2) ==2:
+        edge4 = origin_edge2[::-1]
+        edge1 = origin_edge3[::-1]
+        edge2 = origin_edge4[::-1]
+        edge3 = origin_edge1[::-1]
+    elif len(edge3) ==2:
+        edge4 = origin_edge3
+        edge3 = origin_edge2[::-1]
+        edge2 = origin_edge3
+        edge1 = origin_edge4[::-1]
+    elif len(edge4) ==2:
+        edge1 = origin_edge1
+        edge2 = origin_edge2
+        edge3 = origin_edge3
+        edge4 = origin_edge4  
+    else:
+        aaa
+    
+    if len(edge1)==2:
+        return build_unit_x_1_1_y(cdb_obj, edge1, edge2, edge3, edge4)
+    if len(edge3)==2:
+        return build_unit_x_1_1_y(cdb_obj, edge1, edge2, edge3, edge4)
+    
+    if len(edge1) > len(edge3):
+        edge_l = edge1
+        edge_s = edge3
+        edge_m = edge2
+    else:
+        edge_l = edge3
+        edge_s = edge1
+        edge_m = edge2
+
+    edge_index = 0
+    pre_node = edge_s[0]
+    for index in range(1, len(edge_s)):
+        node = edge_s[index]
+        
+        next_edge_index = next_index(node, edge_l, edge_index, 1)
+        temp_edge1 = [pre_node, node]
+        if index == len(edge_s)-1:
+            temp_edge2 = edge_m
+        else:
+            temp_edge2 = [node, edge_l[next_edge_index]]
+        temp_edge3 = edge_l[edge_index:next_edge_index+1]
+        temp_edge4 = [pre_node, edge_l[edge_index]]
+        build_unit_x_1_1_y(cdb_obj, temp_edge1, temp_edge2, temp_edge3, temp_edge4)
+        
+        edge_index = next_edge_index
+        pre_node = node
+        
+    return origin_edge1, origin_edge2, origin_edge3, origin_edge4
+        
+    
