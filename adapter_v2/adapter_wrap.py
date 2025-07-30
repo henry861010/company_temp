@@ -18,7 +18,7 @@ def get_direction(edge, tolerance = 0.001):
         print("not the edge in x or y")
     return [x, y]
 
-def intersection(edge1, edge2, limit: bool = True):
+def intersection(edge1, edge2, limit: bool = True, tolerance=0.0001):
     x1, y1 = edge1[0]
     x2, y2 = edge1[-1]
     x3, y3 = edge2[0]
@@ -77,7 +77,7 @@ def equal_node(node1, node2):
         return False
     return True
         
-def get_section(outline_list, expanding_list, pattern_lines_x: list, pattern_lines_y: list):   
+def get_section(outline_list, expanding_list, pattern_lines_vertical: list, pattern_lines_horizon: list):   
     section_list = []
     
     for index, outline in enumerate(outline_list):
@@ -95,10 +95,10 @@ def get_section(outline_list, expanding_list, pattern_lines_x: list, pattern_lin
         
         outline_dir = get_direction(outline)
         if outline_dir[0] != 0:
-            pattern_lines = pattern_lines_x
+            pattern_lines = pattern_lines_vertical
             pattern_lines_iteration = int(outline_dir[0]+outline_dir[1])
         else:
-            pattern_lines = pattern_lines_y
+            pattern_lines = pattern_lines_horizon
             pattern_lines_iteration = int(outline_dir[0]+outline_dir[1])
             
         ### get the node1 & node2
@@ -153,7 +153,7 @@ def get_section(outline_list, expanding_list, pattern_lines_x: list, pattern_lin
             outline_outer = [[outline[0][0]+expanding[0], outline[0][1]+expanding[1]], [outline[-1][0]+expanding[0], outline[-1][1]+expanding[1]]]
             for i in range(len(pattern_lines)-1, -1, pattern_lines_iteration):
                 inner_intersection = intersection(pattern_lines[i], outline_inner)
-                outer_intersection = intersection(pattern_lines[i], [temp_node2, section_node3])
+                outer_intersection = intersection(pattern_lines[i], [section_node2, section_node3])
                 if inner_intersection == section_node4:
                     section_node3 = outer_intersection
                     break
@@ -163,10 +163,10 @@ def get_section(outline_list, expanding_list, pattern_lines_x: list, pattern_lin
             next_section_node1 = outline[nearby(next_section_node2, outline_post)]
             outline_post_dir = get_direction(outline_post)
             if outline_post_dir[0] != 0:
-                pattern_post_lines = pattern_lines_x
+                pattern_post_lines = pattern_lines_vertical
                 pattern_post_lines_iteration = int(outline_post_dir[0]+outline_post_dir[1])
             else:
-                pattern_post_lines = pattern_lines_y
+                pattern_post_lines = pattern_lines_horizon
                 pattern_post_lines_iteration = int(outline_post_dir[0]+outline_post_dir[1])
             outline_post_inner = outline_post
             outline_post_outer = [[outline_post[0][0]+expanding_post[0], outline_post[0][1]+expanding_post[1]], [outline_post[-1][0]+expanding_post[0], outline_post[-1][1]+expanding_post[1]]]
@@ -198,50 +198,50 @@ def get_section(outline_list, expanding_list, pattern_lines_x: list, pattern_lin
                 
         ### if the node1==node2, there is no "LINE"
         if not equal_node(section_node1, section_node4):
-            edge1 = [section_node1, section_node2]
-            edge2 = [section_node2, section_node3]
-            edge3 = [section_node4, section_node3]
-            edge4 = outline
+            outer_line = [section_node2, section_node3]
+            
+            edge4_begin_index = nearby(section_node1, outline)
+            edge4_end_index = nearby(section_node4, outline)
+            inner_line = outline[edge4_begin_index:edge4_end_index+1]
 
             ### loop to find each section of "LINE"
             post_index = 0
-            begin_index = nearby(section_node1, edge4)
-            new_edge2 = [edge2[0]]
+            begin_index = 0
+            new_edge2 = [section_node2]
+            left_edge = [section_node1, section_node2]
             for i in range(len(pattern_lines)-1, -1, pattern_lines_iteration):
                 pattern_line = pattern_lines[i]
-                inner_intersection = intersection(pattern_line, edge4)
-                outer_intersection = intersection(pattern_line, edge2)
+                inner_intersection = intersection(pattern_line, inner_line)
+                outer_intersection = intersection(pattern_line, outer_line)
                 
                 if outer_intersection is not None:
                     new_edge2.append(outer_intersection)
                 if inner_intersection is not None:
-                    begin_index = post_index
-                    post_index += 1
-                    while not equal_node(inner_intersection, edge4[post_index]):
-                        post_index += 1
-                    if post_index == len(edge4)-1:
+                    post_index = nearby(inner_intersection, inner_line)
+                    if post_index == len(inner_line)-1:
                         break
                     
                     section_list.append({
                         "type": "LINE",
-                        "edge1": edge1,
+                        "edge1": left_edge,
                         "edge2": new_edge2,
                         "edge3": [inner_intersection, outer_intersection],
-                        "edge4": edge4[begin_index : post_index+1],
+                        "edge4": inner_line[begin_index : post_index+1],
                     })
-                    edge1 = [inner_intersection, outer_intersection]
+                    left_edge = [inner_intersection, outer_intersection]
                     new_edge2 = [new_edge2[-1]]
+                    begin_index = post_index
 
             ### the last section of "LINE"
             if not equal_node(new_edge2[-1], section_node3):
                 new_edge2.append(section_node3)
-                section_node4_index = nearby(section_node4, edge4)
+                section_node4_index = nearby(section_node4, left_edge)
                 section_list.append({
                     "type": "LINE",
-                    "edge1": [section_node1, section_node2],
+                    "edge1": left_edge,
                     "edge2": new_edge2,
                     "edge3": [section_node4, section_node3],
-                    "edge4": edge4[begin_index:],
+                    "edge4": inner_line[begin_index:],
                 })
         
         section_list.append(right_corner_section)
@@ -310,7 +310,7 @@ def build_section(cdb_obj: 'Mesh2D', element_size, section_list):
                 outline_list.append(outline + outline_left[1:])
             outline = outline_right
         elif section["type"] == "INNER_RIGHT":
-            outline_left, outline_right = build_wrap_inner_right(cdb_obj, element_size, section):
+            outline_left, outline_right = build_wrap_inner_right(cdb_obj, element_size, section)
                 
             if index == 0:
                 first_outline_left = outline_left
@@ -318,7 +318,7 @@ def build_section(cdb_obj: 'Mesh2D', element_size, section_list):
                 outline_list.append(outline + outline_left[1:])
             outline = outline_right
         elif section["type"] == "INNER_BOTH":
-            outline_left, outline_right = build_wrap_inner_both(cdb_obj, element_size, section):
+            outline_left, outline_right = build_wrap_inner_both(cdb_obj, element_size, section)
                 
             if index == 0:
                 first_outline_left = outline_left
