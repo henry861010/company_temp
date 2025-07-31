@@ -1,7 +1,7 @@
-from adapter_wrap import get_section
+from adapter_get_section import *
 
 a = 100
-element_size = 2
+element_size = 10
 edge1 = [[0,0], [a,0]]
 edge2 = [[a,0], [a,a]]
 edge3 = [[a,a], [2*a,a]]
@@ -38,7 +38,9 @@ expanding11 = [0,-element_size]
 expanding12 = [-element_size,0]
 expanding_list = [expanding1, expanding2, expanding3, expanding4, expanding5, expanding6, expanding7, expanding8, expanding9, expanding10, expanding11, expanding12]
 
-section_list = get_section(outline_list, expanding_list, [], [])
+pattern_lines_vertical = []
+
+section_list = adapter_get_section(outline_list, expanding_list, [], [])
 
 for section in section_list:
     print(section["type"])
@@ -69,3 +71,4 @@ for section in section_list:
         print(f"    edge2({len(edge2)}) - {edge2[0]}~{edge2[-1]}")
         print(f"    edge3({len(edge3)}) - {edge3[0]}~{edge3[-1]}")
         print(f"    edge4({len(edge4)}) - {edge4[0]}~{edge4[-1]}")
+        
