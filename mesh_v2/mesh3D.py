@@ -349,7 +349,6 @@ class Mesh3D:
         else:
             for interface in interfaces:
                 
-        
     def read_CDB(self):
         print("~")
          
