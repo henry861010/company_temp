@@ -67,64 +67,46 @@ class Mesh3D(self):
         )
         return self.element_ids[mask]
     
-    def normal(self, direction='+z'):
-        dir_map = {
-            '+x': np.array([1,0,0]),
-            '-x': np.array([-1,0,0]),
-            '+y': np.array([0,1,0]),
-            '-y': np.array([0,-1,0]),
-            '+z': np.array([0,0,1]),
-            '-z': np.array([0,0,-1])
+    def normal(self, direction):
+        mapping = {
+            "+z": {
+                "+x": [0,4,5,1,3,7,6,2],
+                "-x": [0,4,7,3,1,5,6,2],
+                "+y": [0,3,7,4,1,2,6,5],
+                "-y": [0,1,5,4,3,2,6,7],
+                "+z": [0,1,2,3,4,5,6,7],
+                "-z": [0,3,2,1,4,7,6,5],
+            },
+            "-z": {
+                "+x": [0,1,5,4,3,2,6,7],
+                "-x": [0,3,7,4,1,2,6,5],
+                "+y": [0,4,7,3,1,5,6,2],
+                "-y": [0,4,5,1,3,7,6,2],
+                "+z": [0,3,2,1,4,7,6,5],
+                "-z": [0,1,2,3,4,5,6,7],
+            }
         }
-        target_dir = dir_map[direction.lower()]
 
-        coords = mesh.nodes[mesh.elements[:, :4]]        # bottom face coordinates
+        # bottom face coordinates
+        coords = self.nodes[self.elements[:, :4]]        # (n_elem,4,3)
         v1 = coords[:, 1, :] - coords[:, 0, :]
         v2 = coords[:, 3, :] - coords[:, 0, :]
-        normals = np.cross(v1, v2)
-        
-        dots = normals @ target_dir # @ is matrix multiplication / dot product in NumPy.
-        flip_mask = dots < 0
-        flip_indices = np.where(flip_mask)[0]
+        normals = np.cross(v1, v2)                       # (n_elem,3)
 
-        # flip elements
-        mesh.elements[flip_indices, :4] = mesh.elements[flip_indices, :4][:, ::-1]
-        mesh.elements[flip_indices, 4:] = mesh.elements[flip_indices, 4:][:, ::-1]
-        
-def normalize_hex_direction(mesh, direction='+z'):
-    """
-    Reorient all 8-node hex elements along a specified direction.
-    
-    direction: one of '+x', '-x', '+y', '-y', '+z', '-z'
-    """
-    # map string to unit vector
-    dir_map = {
-        '+x': np.array([1,0,0]),
-        '-x': np.array([-1,0,0]),
-        '+y': np.array([0,1,0]),
-        '-y': np.array([0,-1,0]),
-        '+z': np.array([0,0,1]),
-        '-z': np.array([0,0,-1])
-    }
-    
-    target_dir = dir_map[direction.lower()]
-    
-    for i in range(len(mesh.elements)):
-        elem = mesh.elements[i]
-        # bottom face nodes
-        n0, n1, n2, n3 = elem[:4]
-        coords = mesh.nodes[[n0, n1, n2, n3]]
-        
-        # compute face normal
-        v1 = coords[1] - coords[0]
-        v2 = coords[3] - coords[0]
-        normal = np.cross(v1, v2)
-        
-        # if normal is opposite to target direction, flip element
-        if np.dot(normal, target_dir) < 0:
-            # flip bottom nodes
-            elem[:4] = elem[:4][::-1]
-            # flip top nodes
-            elem[4:] = elem[4:][::-1]
-        
-        mesh.elements[i] = elem
+        # normalize
+        lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+        lengths[lengths == 0] = 1.0
+        normals = normals / lengths
+
+        # loop through all axes
+        for axis, sign in [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)]:
+            idx = np.where(normals[:, axis] == sign)[0]
+            if len(idx) == 0:
+                continue
+            if axis == 0:  # x-axis
+                key = "+x" if sign == 1 else "-x"
+            elif axis == 1:  # y-axis
+                key = "+y" if sign == 1 else "-y"
+            else:  # z-axis
+                key = "+z" if sign == 1 else "-z"
+            self.elements[idx, :] = self.elements[idx][:, mapping[direction][key]]
