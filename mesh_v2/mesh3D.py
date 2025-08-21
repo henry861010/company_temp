@@ -355,7 +355,6 @@ class Mesh3D:
     def generate_cdb(self, path: str = 'cdb.txt', element_type: str = "185"):
         print("generate CDB")
         
-        
     def show_info(self):
         ### basic info
         print(f"[Basic Info]:")
