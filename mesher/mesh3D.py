@@ -7,23 +7,22 @@ from matplotlib.collections import PatchCollection
 ELEMENT_LEN = 8
 NODE_LEN = 3
 
-ELEMENT_2D_LEN = 11
-ELEMENT_2D_ID = 0
-ELEMENT_2D_COMP_ID = 1
-ELEMENT_2D_VOLUMN = 2
-ELEMENT_2D_NODE1_X = 3
-ELEMENT_2D_NODE1_Y = 4
-ELEMENT_2D_NODE2_X = 5
-ELEMENT_2D_NODE2_Y = 6
-ELEMENT_2D_NODE3_X = 7
-ELEMENT_2D_NODE3_Y = 8
-ELEMENT_2D_NODE4_X = 9
-ELEMENT_2D_NODE4_Y = 10
+ELEMENT_2D_LEN = 10
+ELEMENT_2D_COMP_ID = 0
+ELEMENT_2D_VOLUMN = 1
+ELEMENT_2D_NODE1_X = 2
+ELEMENT_2D_NODE1_Y = 3
+ELEMENT_2D_NODE2_X = 4
+ELEMENT_2D_NODE2_Y = 5
+ELEMENT_2D_NODE3_X = 6
+ELEMENT_2D_NODE3_Y = 7
+ELEMENT_2D_NODE4_X = 8
+ELEMENT_2D_NODE4_Y = 9
 
 class Mesh3D:
     def __init__(self):
         ### component
-        self.comps = {}
+        self.comps = {"EMPTY":0}
         
         ### 3D elements
         self.elements = np.empty((0, ELEMENT_LEN), dtype=np.int32)
@@ -37,6 +36,18 @@ class Mesh3D:
         self.element_2D = np.empty((0, ELEMENT_2D_LEN), dtype=np.float32)
         self.element_2D_nodes = np.empty((0, 4), dtype=np.int32)
         
+    ### initial
+    def initial(self, parser:'Mesh2D'):
+        element_coords, element_node_ids, node_coords, node_ids = parser.get()
+        self.element_2D = np.empty((len(element_coords), ELEMENT_2D_LEN), dtype=np.float32)
+        
+        self.element_2D[:,ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1] = element_coords.reshape(element_coords.shape[0], 8)
+        self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
+        self.element_2D_nodes = element_node_ids
+        
+        self.cal_volumns()
+        
+    ### function
     def cal_volumns(self):
         # Extract coordinates as (N, 4) for each x and y
         x1, y1 = self.element_2D[:, ELEMENT_2D_NODE1_X],  self.element_2D[:, ELEMENT_2D_NODE1_Y]
@@ -61,8 +72,10 @@ class Mesh3D:
         rows = index if index is not None else slice(None)
         
         # gather 4 corners
-        x4 = elements[rows, [ELEMENT_2D_NODE1_X, ELEMENT_2D_NODE2_X, ELEMENT_2D_NODE3_X, ELEMENT_2D_NODE4_X]]
-        y4 = elements[rows, [ELEMENT_2D_NODE1_Y, ELEMENT_2D_NODE2_Y, ELEMENT_2D_NODE3_Y, ELEMENT_2D_NODE4_Y]]
+        cols = np.array([ELEMENT_2D_NODE1_X, ELEMENT_2D_NODE2_X, ELEMENT_2D_NODE3_X, ELEMENT_2D_NODE4_X], dtype=int)
+        x4 = elements[np.ix_(rows, cols)]
+        cols = np.array([ELEMENT_2D_NODE1_Y, ELEMENT_2D_NODE2_Y, ELEMENT_2D_NODE3_Y, ELEMENT_2D_NODE4_Y], dtype=int)
+        y4 = elements[np.ix_(rows, cols)]
         
         ### max/min of each elements
         min_x = x4.min(axis=1)
@@ -108,7 +121,7 @@ class Mesh3D:
         if ranges:
             canidate_indices = np.arange(n, dtype=np.int32)
             for r in ranges:
-                if canidate_indices.size == 0:
+                if len(canidate_indices) == 0:
                     break
                 submask = self.search_face(elements, r["type"], r["dim"], index=canidate_indices)
                 if np.any(submask):
@@ -122,7 +135,7 @@ class Mesh3D:
         if holes:
             live_indices = np.nonzero(included_mask)[0]
             for h in holes:
-                if live_indices.size == 0:
+                if len(live_indices) == 0:
                     break
                 submask = self.search_face(elements, h["type"], h["dim"], index=live_indices)
                 if np.any(submask):
@@ -140,7 +153,7 @@ class Mesh3D:
         Operates by shuffling indices only and using cumsum to avoid Python loops.
         Returns the remaining *row indices within this subset* (not global IDs).
         """
-        target_indices = np.arange(elements.size, dtype=np.int32)
+        target_indices = np.arange(len(elements), dtype=np.int32)
         
         # target volume
         target = (density / 100.0) * total_volume
@@ -148,7 +161,7 @@ class Mesh3D:
 
         # random order of candidates (indices only, not rows)
         rng = np.random.default_rng(None if isRandomSeed else 1)
-        random_indices = target_indices[rng.permutation(target_indices.size)]
+        random_indices = target_indices[rng.permutation(len(elements))]
 
         # cumulative sum until target
         csum = np.cumsum(vols[random_indices])
@@ -165,12 +178,12 @@ class Mesh3D:
         # 1) Select the area once (mask -> indices)
         ranges = [{"type": area["type"], "dim": area["dim"]}]
         holes  = area.get("holes")
-        area_indices   = self.search_faces(self.element_2D, ranges, holes)  # boolean over elements
-        if area_indices.size == 0:
+        area_indices  = self.search_faces(self.element_2D, ranges, holes)  # boolean over elements
+        if len(area_indices) == 0:
             return
 
         # Working pool: local indices into area_idx
-        remaining_indices = np.arange(area_indices.size, dtype=np.int32)
+        remaining_indices = np.arange(len(area_indices), dtype=np.int32)
 
         # Convenience views for writes/reads via global IDs
         area_comps = self.element_2D[area_indices, ELEMENT_2D_COMP_ID]
@@ -194,7 +207,7 @@ class Mesh3D:
                 remaining_target_indices = remaining_indices[region_local]
             
                 ### remove the assignment
-                if remaining_target_indices.size:
+                if len(remaining_target_indices):
                     comp_id = self.comps[metal["material"]]
                     assigned_mask = (area_comps[remaining_target_indices] == comp_id)
                     if np.any(assigned_mask):
@@ -211,7 +224,7 @@ class Mesh3D:
                 remaining_target_indices = remaining_indices[region_local]  
                                 
                 ### convert the assignment metal & remove the assignment
-                if remaining_target_indices.size:
+                if len(remaining_target_indices):
                     material_old = metal["material_o"]
                     material_new = metal["material"]
                     if material_new not in self.comps: 
@@ -222,7 +235,7 @@ class Mesh3D:
                     assigned_mask = (area_comps[remaining_target_indices] == comp_id_old)
                     if np.any(assigned_mask):
                         remaining_assigned_indices = remaining_target_indices[assigned_mask]
-                        self.element_2D[area_indices][remaining_indices, ELEMENT_2D_COMP_ID] = comp_id_new
+                        self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id_new
                         remaining_indices = np.setdiff1d(remaining_indices, remaining_assigned_indices, assume_unique=False)
         
         ### metal assignment Normal
@@ -231,13 +244,15 @@ class Mesh3D:
                 ### find potential assignment area  
                 ranges = metal.get("ranges")
                 holes = metal.get("holes")
+                density = metal.get("density")
+                volumn = metal.get("volumn")
                 region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
                 remaining_target_indices = remaining_indices[region_local]  
                             
                 ### assign metal
-                if remaining_target_indices.size:
+                if len(remaining_target_indices):
                     ### find the assiment area
-                    (remaining_assigned_indices, remaining_unassigned_indices) = self.assign_metal(self.element_2D[area_indices][remaining_indices], metal)
+                    (remaining_assigned_indices, remaining_unassigned_indices) = self.assign_metal(self.element_2D[area_indices][remaining_indices], density, volumn)
                     assigned_indices  = remaining_indices[remaining_assigned_indices]
                     unassigned_indices  = remaining_indices[remaining_unassigned_indices]
                     
@@ -246,17 +261,17 @@ class Mesh3D:
                     if material not in self.comps:
                         self.comps[material] = len(self.comps)
                     comp_id = self.comps[material]
-                    
-                    self.element_2D[area_indices][assigned_indices,ELEMENT_2D_COMP_ID] = comp_id
+
+                    self.element_2D[area_indices[assigned_indices], ELEMENT_2D_COMP_ID] = comp_id
                     remaining_indices = unassigned_indices
-            
+
         ### assign the material
-        if remaining_indices.size:
+        if len(remaining_indices):
             material = area["material"]
             if material not in self.comps:
                 self.comps[material] = len(self.comps)
             comp_id = self.comps[material]
-            self.element_2D[area_indices][remaining_indices, ELEMENT_2D_COMP_ID] = comp_id
+            self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id
         
     def drag(self, element_size: float, end: float):
         print("drag")
@@ -298,10 +313,9 @@ class Mesh3D:
             coords = elem[ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1].reshape(4, 2)   # shape (4,2): [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
             poly = Polygon(coords, closed=True)
             patches.append(poly)
-            colors.append(comp_id)  # color by comp_id
-
+            colors.append(comp_id)
         collection = PatchCollection(patches, cmap=cmap, edgecolor='k', alpha=0.8)
-        collection.set_array(np.array(colors))
+        collection.set_array(colors)
 
         fig, ax = plt.subplots()
         ax.add_collection(collection)
@@ -310,39 +324,3 @@ class Mesh3D:
         plt.colorbar(collection, ax=ax, label="comp_id")
         plt.show()
         
-    def build_checkerboard(self, x_list, y_list, comp_id=0):
-        x = np.asarray(x_list, dtype=dtype_nodes)
-        y = np.asarray(y_list, dtype=dtype_nodes)
-        Nx, Ny = x.size, y.size
-        if x.ndim != 1 or y.ndim != 1 or Nx < 2 or Ny < 2:
-            raise ValueError("x_list and y_list must be 1D and have length >= 2.")
-
-        # nodes: (Ny*Nx, 2) with x varying fastest
-        X, Y = np.meshgrid(x, y, indexing='xy')
-        nodes = np.column_stack([X.ravel(), Y.ravel()])
-
-        # grid cell indices
-        ix = np.arange(Nx - 1)
-        iy = np.arange(Ny - 1)
-        GX, GY = np.meshgrid(ix, iy, indexing='xy')
-
-        # node index helper (row-major)
-        n00 = (GY    ) * Nx + (GX    )   # BL
-        n10 = (GY    ) * Nx + (GX + 1)   # BR
-        n11 = (GY + 1) * Nx + (GX + 1)   # TR
-        n01 = (GY + 1) * Nx + (GX    )   # TL
-
-        # >>> CLOCKWISE order: BL, TL, TR, BR <<<
-        element_node_ids = np.stack([n00, n01, n11, n10], axis=-1).reshape(-1, 4).astype(np.int32)
-
-        # pack elements: [comp_id, x1,y1, x2,y2, x3,y3, x4,y4] in CW order
-        corner_coords = nodes[element_node_ids.reshape(-1)]   # (Nc*4, 2)
-        elem_xy = corner_coords.reshape(-1, 8)                # (Nc, 8)
-        comp_col = np.full((elem_xy.shape[0], 1), comp_id, dtype=np.int32)
-        elements = np.hstack([comp_col, elem_xy])             # (Nc, 9)
-
-        print(elements)
-        print(element_node_ids)
-        return nodes, element_node_ids, elements
-            
-            

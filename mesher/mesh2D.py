@@ -5,12 +5,15 @@ import matplotlib.cm as cm
 from my_math import *
 
 import time
+import matplotlib.pyplot as plt
+from matplotlib.collections import PolyCollection
 
 class Mesh2D:
     def __init__(self):
         ### process
-        self.element_2D = np.empty((100, 4), dtype=np.int32)
-        self.node_2D = np.empty((100, 2), dtype=np.float32)
+        self.element_2D = np.empty((0, 4), dtype=np.int32)
+        self.element_2D_nodes = np.empty((0), dtype=np.int32)
+        self.node_2D = np.empty((0, 2), dtype=np.float32)
         
         ### others
         self.node_map = {}
@@ -126,15 +129,39 @@ class Mesh2D:
         n01 = (GY + 1) * Nx + (GX    )  # TL
 
         # CLOCKWISE: BL, TL, TR, BR
-        element_node_ids = np.stack([n00, n01, n11, n10], axis=-1)\
-                            .reshape(-1, 4).astype(np.int32)
+        elements = np.stack([n00, n01, n11, n10], axis=-1).reshape(-1, 4).astype(np.int32)
 
-        # --- elements: [comp_id, x1,y1, x2,y2, x3,y3, x4,y4] (CW) ---
-        corner_coords = nodes[element_node_ids.reshape(-1), :]   # (Nc*4, 2) float32
-        elem_xy = corner_coords.reshape(-1, 8)                   # (Nc, 8) float32
+        new_node_num = len(nodes)
+        new_elem_num = len(elements)
+        self.pre_allocate_elements(new_elem_num)
+        self.pre_allocate_nodes(new_node_num)
+        self.element_2D[self.element_num:self.element_num+new_elem_num+1] = elements
+        self.node_2D[self.node_num:self.node_num+new_node_num+1] = nodes
+        self.element_num += len(elements)
+        self.node_num += len(nodes)
 
-        # NOTE: mixing int comp_id with float coords will upcast to float.
-        comp_col = np.full((elem_xy.shape[0], 1), comp_id, dtype=np.float32)
-        elements = np.hstack([comp_col, elem_xy]).astype(np.float32)  # (Nc, 9)
+    ### access
+    def get(self):
+        element_coords = self.node_2D[:self.node_num][self.element_2D[:self.element_num]]
+        element_node_ids = self.element_2D[:self.element_num]
+        node_coords = self.node_2D[:self.node_num]
+        node_ids = np.arange(self.node_2D.size, dtype=np.int32)
+        return element_coords, element_node_ids, node_coords, node_ids
 
-        return nodes, element_node_ids, elements
+    ### debug
+    def show_graph_2D(self, cmap='tab20'):
+        patches = []
+        colors = []
+
+        coords = self.node_2D[:self.node_num][self.element_2D[:self.element_num]]#.reshape(-1, 2)  
+        fig, ax = plt.subplots()
+        pc = PolyCollection(
+            coords, closed=True,
+            facecolors='none', edgecolors='black', linewidths=1,
+        )
+        ax.add_collection(pc)
+
+        ax.set_aspect('equal', adjustable='box')
+        ax.autoscale()
+        ax.grid(True)
+        plt.show()
