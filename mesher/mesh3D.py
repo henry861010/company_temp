@@ -56,6 +56,18 @@ class Mesh3D:
         
         self.cal_volumns()
         
+    def set_2D(self, mesh2D):
+        self.element_2D_nodes = mesh2D.get_elements()
+        self.node_2D = mesh2D.get_nodes()
+        
+        self.element_2D = np.empty((self.element_2D_nodes.size, ELEMENT_2D_LEN), dtype=np.float32)
+        self.element_2D[:,ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1] = element_coords.reshape(element_coords.shape[0], 8)
+        self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
+        
+        self.node_2D_to_3D = np.zeros(len(node_coords), dtype=np.int32) - 1
+        
+        self.cal_volumns()
+        
     ### foundmental
     def _pre_allocate_nodes(self, size: int = 1):
         required = self.node_num + size
