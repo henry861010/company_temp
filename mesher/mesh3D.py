@@ -25,16 +25,22 @@ class Mesh3D:
         self.comps = {"EMPTY":0}
         
         ### 3D elements
+        self.element_num = 0
         self.elements = np.empty((0, ELEMENT_LEN), dtype=np.int32)
         self.element_ids = np.empty((0), dtype=np.int32)
+        self.element_comps = np.empty((0), dtype=np.int32)
         
         ### nodes
-        self.nodes = np.empty((0, NODE_LEN), dtype=np.float64)
-        self.node_ids = np.empty((0), dtype=np.float64)
+        self.node_num = 0
+        self.nodes = np.empty((0, NODE_LEN), dtype=np.float32)
+        self.node_ids = np.empty((0), dtype=np.float32)
         
         ### process
         self.element_2D = np.empty((0, ELEMENT_2D_LEN), dtype=np.float32)
-        self.element_2D_nodes = np.empty((0, 4), dtype=np.int32)
+        self.element_2D_nodes = np.zeros((0, 4), dtype=np.int32)
+        
+        self.node_2D = np.empty((0, 2), dtype=np.float32)
+        self.node_2D_to_3D = np.zeros((0), dtype=np.int32)
         
     ### initial
     def initial(self, parser:'Mesh2D'):
@@ -45,7 +51,32 @@ class Mesh3D:
         self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
         self.element_2D_nodes = element_node_ids
         
+        self.node_2D = node_coords
+        self.node_2D_to_3D = np.zeros(len(node_coords), dtype=np.int32) - 1
+        
         self.cal_volumns()
+        
+    ### foundmental
+    def _pre_allocate_nodes(self, size: int = 1):
+        required = self.node_num + size
+        current_capacity = len(self.nodes)
+        if required > current_capacity:
+            new_capacity = max(required, int(current_capacity * 1.5))
+            extra = new_capacity - current_capacity
+            
+            self.nodes = np.vstack([self.nodes, np.empty((extra, 3), dtype=np.float32)])
+            self.node_ids = np.concatenate([self.node_ids, np.empty(extra, dtype=np.int32)])
+
+    def _pre_allocate_elements(self, size: int = 1):
+        required = self.element_num + size
+        current_capacity = len(self.elements)
+        if required > current_capacity:
+            new_capacity = max(required, int(current_capacity * 1.5))
+            extra = new_capacity - current_capacity
+            
+            self.elements = np.vstack([self.elements, np.empty((extra, 8), dtype=np.int32)])
+            self.element_ids = np.concatenate([self.element_ids, np.empty(extra, dtype=np.int32)])
+            self.element_comps = np.concatenate([self.element_comps, np.empty(extra, dtype=np.int32)])
         
     ### function
     def cal_volumns(self):
@@ -168,8 +199,7 @@ class Mesh3D:
         k = np.searchsorted(csum, target, side="right")  # number to take (may be 0)
         if k > 0:
             chosen_indices  = target_indices[random_indices[:k]]
-            remaining_indices = np.setdiff1d(np.arange(len(elements)), chosen_indices, assume_unique=False)
-            return chosen_indices, remaining_indices
+            return chosen_indices
         else:
             # no assignment if density threshold is 0 or vols too small
             return np.empty((0), dtype=np.int32), np.arange(len(elements))
@@ -240,21 +270,21 @@ class Mesh3D:
         
         ### metal assignment Normal
         for metal in area.get("metals", []):
-            if metal["type"] == "NORMAL":  
+            if metal["type"] == "NORMAL": 
                 ### find potential assignment area  
                 ranges = metal.get("ranges")
                 holes = metal.get("holes")
                 density = metal.get("density")
                 volumn = metal.get("volumn")
+                
                 region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
                 remaining_target_indices = remaining_indices[region_local]  
-                            
+                                            
                 ### assign metal
                 if len(remaining_target_indices):
-                    ### find the assiment area
-                    (remaining_assigned_indices, remaining_unassigned_indices) = self.assign_metal(self.element_2D[area_indices][remaining_indices], density, volumn)
-                    assigned_indices  = remaining_indices[remaining_assigned_indices]
-                    unassigned_indices  = remaining_indices[remaining_unassigned_indices]
+                    ### find the assignment area
+                    remaining_assigned_indices = self.assign_metal(self.element_2D[area_indices][remaining_target_indices], density, volumn)
+                    assigned_indices  = remaining_target_indices[remaining_assigned_indices]
                     
                     ### assigne metal
                     material = metal["material"]
@@ -262,8 +292,12 @@ class Mesh3D:
                         self.comps[material] = len(self.comps)
                     comp_id = self.comps[material]
 
+                    ### assign the metal
                     self.element_2D[area_indices[assigned_indices], ELEMENT_2D_COMP_ID] = comp_id
-                    remaining_indices = unassigned_indices
+
+                    ### remove assigned element
+                    temp_mask = ~np.isin(remaining_indices, assigned_indices) 
+                    remaining_indices = remaining_indices[temp_mask]
 
         ### assign the material
         if len(remaining_indices):
@@ -273,9 +307,88 @@ class Mesh3D:
             comp_id = self.comps[material]
             self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id
         
-    def drag(self, element_size: float, end: float):
-        print("drag")
+    def drag(self, element_size: float, begin: float, end: float):
+        ### calculate drag_num & element_size
+        distance  = round(float(end) - float(begin), 5)
+        if distance <= 0:
+            return 0
+        drag_num = int(np.ceil(distance / element_size))
+        element_size = distance / drag_num
+
+        ### target element index
+        elem2D_idx = np.flatnonzero(self.element_2D[:, ELEMENT_2D_COMP_ID] != 0)
+        if elem2D_idx.size == 0:
+            return 0
+
+        # unique 2D node ids used by those elements
+        elem2D_nodes = self.element_2D_nodes[elem2D_idx]
+        node2D_idx, inv = np.unique(elem2D_nodes, return_inverse=True)
+        elem2D_nodes_local = inv.reshape(elem2D_nodes.shape)   
+
+        ### add the unexisted node
+        unexisted_node2D_idx = node2D_idx[self.node_2D_to_3D[node2D_idx] == -1]
+        if unexisted_node2D_idx.size:
+            self._pre_allocate_nodes(unexisted_node2D_idx.size)
+            
+            dst = self.nodes[self.node_num : self.node_num + unexisted_node2D_idx.size]
+            np.take(self.node_2D, unexisted_node2D_idx, axis=0, out=dst[:, :2]) # xy from 2D nodes -> write directly without temp:
+            dst[:, 2] = begin
+            
+            self.node_2D_to_3D[unexisted_node2D_idx] = np.arange(self.node_num, self.node_num + unexisted_node2D_idx.size, dtype=np.int32)
+            self.node_num += unexisted_node2D_idx.size
+
+        ### begin to drag
+        base_map = self.node_2D_to_3D[node2D_idx]
+        N = node2D_idx.size
+        E = elem2D_idx.size
+
+        ### [NODE] allocate all 3D nodes
+        self._pre_allocate_nodes(N * drag_num)
+        node_start = self.node_num
+        new_node_ids = (node_start + np.arange(N * drag_num, dtype=np.int32)).reshape(drag_num, N)
+
+        # fill XY for all layers (broadcast XY), and Z per layer
+        xy = self.node_2D[node2D_idx]
+        dst_nodes = self.nodes[node_start : node_start + N * drag_num]
+        dst_nodes[:, :2] = np.broadcast_to(xy, (drag_num, N, 2)).reshape(N * drag_num, 2)
+
+        z_vals = begin + element_size * (np.arange(1, drag_num + 1, dtype=dst_nodes.dtype))
+        dst_nodes[:, 2] = np.repeat(z_vals, N)
+
+        self.node_num += N * drag_num
+
+        ### [ELEMENT] allocate all 3D elements
+        self._pre_allocate_elements(E * drag_num)
+        elem_start = self.element_num
+
+        # layer->3D index table (drag_num+1, N): row0 = base, rows1..drag_num = new layers
+        layer_nodes = np.empty((drag_num + 1, N), dtype=np.int32)
+        layer_nodes[0]  = base_map
+        layer_nodes[1:] = new_node_ids
+
+        # For each layer k, bottom = layer_nodes[k-1][cols], top = layer_nodes[k][cols]
+        # cols per element are the (E,4) indices into node2D_idx
+        bottom = layer_nodes[:-1][:, elem2D_nodes_local]
+        top    = layer_nodes[1:][:,  elem2D_nodes_local]
+        elems  = np.concatenate([bottom, top], axis=2).reshape(drag_num * E, 8)
+
+        ### assign nodes to each element
+        self.elements[elem_start : elem_start + drag_num * E] = elems.astype(np.int32, copy=False)
         
+        ### assign ids to each element
+        self.element_ids[elem_start : elem_start + drag_num * E] = 1 + np.max(self.element_ids) + np.arange(drag_num * E)
+
+        ### assign comps to each element
+        layer_comps = self.element_2D[elem2D_idx, ELEMENT_2D_COMP_ID]
+        dest = self.element_comps[elem_start : elem_start + drag_num * E].reshape(drag_num, E)
+        dest[:] = layer_comps
+        
+        self.element_num += drag_num * E
+
+        # update map so future ops start from the top layer
+        self.node_2D_to_3D[:] = -1
+        self.node_2D_to_3D[node2D_idx] = layer_nodes[-1]
+
     ### equivalence
     def equivalence(self, eps=1e-8):
         # Quantize (avoid float-equality issues)
@@ -301,8 +414,9 @@ class Mesh3D:
         print("[3D element]")
         print(f"    3D elements num: {len(self.elements)}")
         for material, comp in self.comps.items():
-            mask = self.element_2D[:,ELEMENT_2D_COMP_ID]==comp
-            print(f"    {material}: {np.count_nonzero(mask)}")
+            if comp > 0:
+                mask = self.element_comps[:]==comp
+                print(f"    {material}: {np.count_nonzero(mask)}")
             
     def show_graph_2D(self, cmap='tab20'):
         patches = []

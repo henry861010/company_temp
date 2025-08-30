@@ -146,6 +146,7 @@ class Mesh2D:
         element_node_ids = self.element_2D[:self.element_num]
         node_coords = self.node_2D[:self.node_num]
         node_ids = np.arange(self.node_2D.size, dtype=np.int32)
+        
         return element_coords, element_node_ids, node_coords, node_ids
 
     ### debug
