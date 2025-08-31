@@ -1,0 +1,10 @@
+# virtualenvs
+venv/
+.venv/
+env/
+ENV/
+
+# python cruft
+__pycache__/
+*.py[cod]
+*.egg-info/
