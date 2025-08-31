@@ -417,6 +417,13 @@ class Mesh3D:
 
         self.nodes = self.nodes[keep_idx]
 
+    ### result
+    def get(self):
+        elements = self.elements[:self.element_num]
+        element_comps = self.element_comps[:self.element_num]
+        nodes = self.nodes[:self.node_num]
+        return elements, element_comps, nodes
+
     ### debug
     def show_info(self):
         print("[nodes]")
