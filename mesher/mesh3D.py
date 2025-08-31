@@ -3,6 +3,7 @@ import time
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
+from matplotlib.path import Path
 
 ELEMENT_LEN = 8
 NODE_LEN = 3
@@ -107,7 +108,7 @@ class Mesh3D:
         # Store back into column 13
         self.element_2D[:, ELEMENT_2D_VOLUMN] = voulmn
         
-    def search_face(self, elements, typ, dim, index=None, eps=0.0):
+    def search_face(self, elements, type, dim, index=None, eps=0.0):
         """
             Fast predicate on subset indices (index). 
             Returns a boolean mask aligned to index (or to all rows if index is None).
@@ -126,7 +127,7 @@ class Mesh3D:
         min_y = y4.min(axis=1)
         max_y = y4.max(axis=1)
 
-        if typ == "BOX":
+        if type == "BOX":
             bl_x, bl_y, tr_x, tr_y = dim
             if eps:
                 bl_x -= eps
@@ -135,16 +136,35 @@ class Mesh3D:
                 tr_y += eps
             return (min_x >= bl_x) & (max_x <= tr_x) & (min_y >= bl_y) & (max_y <= tr_y)
 
-        elif typ == "CYLINDER":
+        elif type == "CYLINDER":
             cx, cy, r = dim
             rr = r*r + 0.0
             if eps:
                 rr = (r + eps) * (r + eps)
             dist = (x4 - cx)**2 + (y4 - cy)**2
             return np.all(dist <= rr, axis=1)
+        
+        elif type == "POLYGON":
+            quads = np.asarray(self.element_2D[ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1], float).reshape(-1, 4, 2)
+            path  = Path(np.asarray(dim, float))
+            
+            ### Optional cheap prefilter to skip obvious outsides
+            pmin, pmax = path.vertices.min(axis=0)path.vertices.max(axis=0)
+            qmin, qmax = quads.min(axis=1),         quads.max(axis=1)
+            
+            ### candiate
+            cand = (qmax[:,0] >= pmin[0]) & (qmin[:,0] <= pmax[0]) & (qmax[:,1] >= pmin[1]) & (qmin[:,1] <= pmax[1])
+
+            out = np.zeros(len(quads), dtype=bool)
+            if not np.any(cand):
+                return out
+
+            verts = quads[cand].reshape(-1, 2)
+            inside = path.contains_points(verts, radius=-eps).reshape(-1, 4).all(axis=1)
+            out[cand] = inside
 
         else:
-            raise ValueError(f"Unsupported type: {typ}")
+            raise ValueError(f"Unsupported type: {type}")
 
     def search_faces(self, elements, ranges=None, holes=None, returnMask=False):
         """
