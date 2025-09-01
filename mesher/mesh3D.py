@@ -1,8 +1,6 @@
 import numpy as np
 import time
-import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
 from matplotlib.path import Path
 
 ELEMENT_LEN = 8
@@ -68,7 +66,7 @@ class Mesh3D:
         self.node_2D_to_3D = np.zeros(len(node_coords), dtype=np.int32) - 1
         
         self.cal_volumns()
-        
+    
     ### foundmental
     def _pre_allocate_nodes(self, size: int = 1):
         required = self.node_num + size
@@ -145,24 +143,21 @@ class Mesh3D:
             return np.all(dist <= rr, axis=1)
         
         elif type == "POLYGON":
-            quads = np.asarray(self.element_2D[ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1], float).reshape(-1, 4, 2)
-            path  = Path(np.asarray(dim, float))
+            radiu = -1e-12
+            path = Path(np.asarray(dim, float))
             
-            ### Optional cheap prefilter to skip obvious outsides
-            pmin, pmax = path.vertices.min(axis=0)path.vertices.max(axis=0)
-            qmin, qmax = quads.min(axis=1),         quads.max(axis=1)
+            node1_list = self.element_2D[:, [ELEMENT_2D_NODE1_X,ELEMENT_2D_NODE1_Y]]
+            mask1 = path.contains_points(node1_list, radius=radiu)
+
+            node2_list = self.element_2D[:, [ELEMENT_2D_NODE2_X,ELEMENT_2D_NODE2_Y]]
+            mask2 = path.contains_points(node2_list, radius=radiu)
             
-            ### candiate
-            cand = (qmax[:,0] >= pmin[0]) & (qmin[:,0] <= pmax[0]) & (qmax[:,1] >= pmin[1]) & (qmin[:,1] <= pmax[1])
-
-            out = np.zeros(len(quads), dtype=bool)
-            if not np.any(cand):
-                return out
-
-            verts = quads[cand].reshape(-1, 2)
-            inside = path.contains_points(verts, radius=-eps).reshape(-1, 4).all(axis=1)
-            out[cand] = inside
-
+            node3_list = self.element_2D[:, [ELEMENT_2D_NODE3_X,ELEMENT_2D_NODE3_Y]]
+            mask3 = path.contains_points(node3_list, radius=radiu)
+            
+            node4_list = self.element_2D[:, [ELEMENT_2D_NODE4_X,ELEMENT_2D_NODE4_Y]]
+            mask4 = path.contains_points(node4_list, radius=radiu)
+            return mask1 & mask2 & mask3 & mask4
         else:
             raise ValueError(f"Unsupported type: {type}")
 
@@ -236,108 +231,112 @@ class Mesh3D:
             # no assignment if density threshold is 0 or vols too small
             return np.empty((0), dtype=np.int32), np.arange(len(elements))
 
-    def organize(self, area: dict):
-        # 1) Select the area once (mask -> indices)
-        ranges = [{"type": area["type"], "dim": area["dim"]}]
-        holes  = area.get("holes")
-        area_indices  = self.search_faces(self.element_2D, ranges, holes)  # boolean over elements
-        if len(area_indices) == 0:
-            return
-
-        # Working pool: local indices into area_idx
-        remaining_indices = np.arange(len(area_indices), dtype=np.int32)
-
-        # Convenience views for writes/reads via global IDs
-        area_comps = self.element_2D[area_indices, ELEMENT_2D_COMP_ID]
-
-        # Volumes for NORMAL metals (within area)
-        for metal in area.get("metals", []):
-            if metal["type"] == "NORMAL":
-                ranges = metal.get("ranges")
-                holes = metal.get("holes")
-                metal_indices = self.search_faces(self.element_2D[area_indices], ranges, holes)
-                vol = self.element_2D[area_indices[metal_indices], ELEMENT_2D_VOLUMN].sum()
-                metal["volumn"] = float(vol)
-
-        ### metal assignment CONTINUE
-        for metal in area.get("metals", []):
-            if metal["type"] == "CONTINUE":
-                ### find potential assignment area  
-                ranges = metal.get("ranges")
-                holes = metal.get("holes")
-                region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
-                remaining_target_indices = remaining_indices[region_local]
+    def organize(self, areas):
+        if isinstance(areas, dict):
+            areas = [areas]
             
-                ### remove the assignment
-                if len(remaining_target_indices):
-                    comp_id = self.comps[metal["material"]]
-                    assigned_mask = (area_comps[remaining_target_indices] == comp_id)
-                    if np.any(assigned_mask):
-                        remaining_assigned_indices = remaining_target_indices[assigned_mask]
-                        remaining_indices = np.setdiff1d(remaining_indices, remaining_assigned_indices, assume_unique=False)
-        
-        ### metal assignment CONVERT
-        for metal in area.get("metals", []):
-            if metal["type"] == "CONVERT":   
-                ### find potential assignment area  
-                ranges = metal.get("ranges")
-                holes = metal.get("holes")
-                region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
-                remaining_target_indices = remaining_indices[region_local]  
-                                
-                ### convert the assignment metal & remove the assignment
-                if len(remaining_target_indices):
-                    material_old = metal["material_o"]
-                    material_new = metal["material"]
-                    if material_new not in self.comps: 
-                        self.comps[material_new] = len(self.comps)
-                    comp_id_old = self.comps[material_old] 
-                    comp_id_new = self.comps[material_new]
-                    
-                    assigned_mask = (area_comps[remaining_target_indices] == comp_id_old)
-                    if np.any(assigned_mask):
-                        remaining_assigned_indices = remaining_target_indices[assigned_mask]
-                        self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id_new
-                        remaining_indices = np.setdiff1d(remaining_indices, remaining_assigned_indices, assume_unique=False)
-        
-        ### metal assignment Normal
-        for metal in area.get("metals", []):
-            if metal["type"] == "NORMAL": 
-                ### find potential assignment area  
-                ranges = metal.get("ranges")
-                holes = metal.get("holes")
-                density = metal.get("density")
-                volumn = metal.get("volumn")
+        for area in areas:
+            ### Select the area once (mask -> indices)
+            ranges = [{"type": area["type"], "dim": area["dim"]}]
+            holes  = area.get("holes")
+            area_indices  = self.search_faces(self.element_2D, ranges, holes)  # boolean over elements
+            if len(area_indices) == 0:
+                return
+
+            ### Working pool: local indices into area_idx
+            remaining_indices = np.arange(len(area_indices), dtype=np.int32)
+
+            ### Convenience views for writes/reads via global IDs
+            area_comps = self.element_2D[area_indices, ELEMENT_2D_COMP_ID]
+
+            ### Volumes for NORMAL metals (within area)
+            for metal in area.get("metals", []):
+                if metal["type"] == "NORMAL":
+                    ranges = metal.get("ranges")
+                    holes = metal.get("holes")
+                    metal_indices = self.search_faces(self.element_2D[area_indices], ranges, holes)
+                    vol = self.element_2D[area_indices[metal_indices], ELEMENT_2D_VOLUMN].sum()
+                    metal["volumn"] = float(vol)
+
+            ### metal assignment CONTINUE
+            for metal in area.get("metals", []):
+                if metal["type"] == "CONTINUE":
+                    ### find potential assignment area  
+                    ranges = metal.get("ranges")
+                    holes = metal.get("holes")
+                    region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
+                    remaining_target_indices = remaining_indices[region_local]
                 
-                region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
-                remaining_target_indices = remaining_indices[region_local]  
-                                            
-                ### assign metal
-                if len(remaining_target_indices):
-                    ### find the assignment area
-                    remaining_assigned_indices = self.assign_metal(self.element_2D[area_indices][remaining_target_indices], density, volumn)
-                    assigned_indices  = remaining_target_indices[remaining_assigned_indices]
+                    ### remove the assignment
+                    if len(remaining_target_indices):
+                        comp_id = self.comps[metal["material"]]
+                        assigned_mask = (area_comps[remaining_target_indices] == comp_id)
+                        if np.any(assigned_mask):
+                            remaining_assigned_indices = remaining_target_indices[assigned_mask]
+                            remaining_indices = np.setdiff1d(remaining_indices, remaining_assigned_indices, assume_unique=False)
+            
+            ### metal assignment CONVERT
+            for metal in area.get("metals", []):
+                if metal["type"] == "CONVERT":   
+                    ### find potential assignment area  
+                    ranges = metal.get("ranges")
+                    holes = metal.get("holes")
+                    region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
+                    remaining_target_indices = remaining_indices[region_local]  
+                                    
+                    ### convert the assignment metal & remove the assignment
+                    if len(remaining_target_indices):
+                        material_old = metal["material_o"]
+                        material_new = metal["material"]
+                        if material_new not in self.comps: 
+                            self.comps[material_new] = len(self.comps)
+                        comp_id_old = self.comps[material_old] 
+                        comp_id_new = self.comps[material_new]
+                        
+                        assigned_mask = (area_comps[remaining_target_indices] == comp_id_old)
+                        if np.any(assigned_mask):
+                            remaining_assigned_indices = remaining_target_indices[assigned_mask]
+                            self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id_new
+                            remaining_indices = np.setdiff1d(remaining_indices, remaining_assigned_indices, assume_unique=False)
+            
+            ### metal assignment Normal
+            for metal in area.get("metals", []):
+                if metal["type"] == "NORMAL": 
+                    ### find potential assignment area  
+                    ranges = metal.get("ranges")
+                    holes = metal.get("holes")
+                    density = metal.get("density")
+                    volumn = metal.get("volumn")
                     
-                    ### assigne metal
-                    material = metal["material"]
-                    if material not in self.comps:
-                        self.comps[material] = len(self.comps)
-                    comp_id = self.comps[material]
+                    region_local = self.search_faces(self.element_2D[area_indices][remaining_indices], ranges, holes)  # indices in pool
+                    remaining_target_indices = remaining_indices[region_local]  
+                                                
+                    ### assign metal
+                    if len(remaining_target_indices):
+                        ### find the assignment area
+                        remaining_assigned_indices = self.assign_metal(self.element_2D[area_indices][remaining_target_indices], density, volumn)
+                        assigned_indices  = remaining_target_indices[remaining_assigned_indices]
+                        
+                        ### assigne metal
+                        material = metal["material"]
+                        if material not in self.comps:
+                            self.comps[material] = len(self.comps)
+                        comp_id = self.comps[material]
 
-                    ### assign the metal
-                    self.element_2D[area_indices[assigned_indices], ELEMENT_2D_COMP_ID] = comp_id
+                        ### assign the metal
+                        self.element_2D[area_indices[assigned_indices], ELEMENT_2D_COMP_ID] = comp_id
 
-                    ### remove assigned element
-                    temp_mask = ~np.isin(remaining_indices, assigned_indices) 
-                    remaining_indices = remaining_indices[temp_mask]
+                        ### remove assigned element
+                        temp_mask = ~np.isin(remaining_indices, assigned_indices) 
+                        remaining_indices = remaining_indices[temp_mask]
 
-        ### assign the material
-        if len(remaining_indices):
-            material = area["material"]
-            if material not in self.comps:
-                self.comps[material] = len(self.comps)
-            comp_id = self.comps[material]
-            self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id
+            ### assign the material
+            if len(remaining_indices):
+                material = area["material"]
+                if material not in self.comps:
+                    self.comps[material] = len(self.comps)
+                comp_id = self.comps[material]
+                self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id
         
     def drag(self, element_size: float, begin: float, end: float):
         ### calculate drag_num & element_size
@@ -421,6 +420,15 @@ class Mesh3D:
         self.node_2D_to_3D[:] = -1
         self.node_2D_to_3D[node2D_idx] = layer_nodes[-1]
 
+    def engine(self, object_list):
+        for obj in object_list:
+            begin_z = obj["begin_z"]
+            for layer in obj["layers"]:
+                self.organize(layer["areas"])
+                self.drag(layer["element_size"], begin_z, layer["z"])
+                begin_z = layer["z"]
+        self.equivalence()
+        
     ### equivalence
     def equivalence(self, eps=1e-8):
         # Quantize (avoid float-equality issues)
@@ -456,24 +464,4 @@ class Mesh3D:
             if comp > 0:
                 mask = self.element_comps[:]==comp
                 print(f"    {material}: {np.count_nonzero(mask)}")
-            
-    def show_graph_2D(self, cmap='tab20'):
-        patches = []
-        colors = []
-
-        for elem in self.element_2D:
-            comp_id = int(elem[ELEMENT_2D_COMP_ID])
-            coords = elem[ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1].reshape(4, 2)   # shape (4,2): [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-            poly = Polygon(coords, closed=True)
-            patches.append(poly)
-            colors.append(comp_id)
-        collection = PatchCollection(patches, cmap=cmap, edgecolor='k', alpha=0.8)
-        collection.set_array(colors)
-
-        fig, ax = plt.subplots()
-        ax.add_collection(collection)
-        ax.autoscale()  # fit to elements
-        ax.set_aspect('equal', 'box')
-        plt.colorbar(collection, ax=ax, label="comp_id")
-        plt.show()
         
