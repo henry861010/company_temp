@@ -72,6 +72,25 @@ area3 = {
 mesh3D_obj.organize(area3)
 mesh3D_obj.drag(5,10,20)
 
+
+area4 = {
+    "type": "POLYGON",
+    "dim": [[20,60], [40,60], [40,80], [60,80], [90,10]],
+    "material": "comp4"
+}
+mesh3D_obj.organize(area4)
+area4 = {
+    "type": "BOX",
+    "dim": [0, 0, 100, 100],
+    "material": "EMPTY",
+    "holes": [{
+        "type": "POLYGON",
+        "dim": [[20,60], [40,60], [40,80], [60,80], [90,10]],
+    }]
+}
+mesh3D_obj.organize(area4)
+mesh3D_obj.drag(1,20,30)
+
 ### show the result
 mesh3D_obj.show_info()
 

@@ -338,6 +338,9 @@ class Mesh3D:
                 comp_id = self.comps[material]
                 self.element_2D[area_indices[remaining_indices], ELEMENT_2D_COMP_ID] = comp_id
         
+    def organize_empty(self):
+        self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
+        
     def drag(self, element_size: float, begin: float, end: float):
         ### calculate drag_num & element_size
         distance  = round(float(end) - float(begin), 5)
