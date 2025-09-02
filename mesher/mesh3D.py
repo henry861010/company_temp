@@ -77,7 +77,7 @@ class Mesh3D:
             self.element_ids = np.concatenate([self.element_ids, np.empty(extra, dtype=np.int32)])
             self.element_comps = np.concatenate([self.element_comps, np.empty(extra, dtype=np.int32)])
         
-    ### function
+    ### searching
     def search_face(self, elements, type, dim, index=None, eps=0.0):
         """
             Fast predicate on subset indices (index). 
@@ -421,7 +421,7 @@ class Mesh3D:
         self.equivalence()
         
     ### equivalence
-    def equivalence(self, eps=1e-8, isLayer=Fals):
+    def equivalence(self, eps=1e-8, isLayer=False):
         nodes = np.asarray(self.nodes, dtype=np.float64, order='C')
         elements = np.asarray(self.elements, order='C')
 
