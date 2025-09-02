@@ -55,18 +55,6 @@ class Mesh3D:
         
         self.cal_volumns()
         
-    def set_2D(self, mesh2D):
-        self.element_2D_nodes = mesh2D.get_elements()
-        self.node_2D = mesh2D.get_nodes()
-        
-        self.element_2D = np.empty((self.element_2D_nodes.size, ELEMENT_2D_LEN), dtype=np.float32)
-        self.element_2D[:,ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1] = element_coords.reshape(element_coords.shape[0], 8)
-        self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
-        
-        self.node_2D_to_3D = np.zeros(len(node_coords), dtype=np.int32) - 1
-        
-        self.cal_volumns()
-    
     ### foundmental
     def _pre_allocate_nodes(self, size: int = 1):
         required = self.node_num + size
@@ -90,22 +78,6 @@ class Mesh3D:
             self.element_comps = np.concatenate([self.element_comps, np.empty(extra, dtype=np.int32)])
         
     ### function
-    def cal_volumns(self):
-        # Extract coordinates as (N, 4) for each x and y
-        x1, y1 = self.element_2D[:, ELEMENT_2D_NODE1_X],  self.element_2D[:, ELEMENT_2D_NODE1_Y]
-        x2, y2 = self.element_2D[:, ELEMENT_2D_NODE2_X],  self.element_2D[:, ELEMENT_2D_NODE2_Y]
-        x3, y3 = self.element_2D[:, ELEMENT_2D_NODE3_X],  self.element_2D[:, ELEMENT_2D_NODE3_Y]
-        x4, y4 = self.element_2D[:, ELEMENT_2D_NODE4_X],  self.element_2D[:, ELEMENT_2D_NODE4_Y]
-
-        # Shoelace formula for quadrilateral
-        voulmn = 0.5 * np.abs(
-            x1*y2 + x2*y3 + x3*y4 + x4*y1 -
-            (y1*x2 + y2*x3 + y3*x4 + y4*x1)
-        )
-
-        # Store back into column 13
-        self.element_2D[:, ELEMENT_2D_VOLUMN] = voulmn
-        
     def search_face(self, elements, type, dim, index=None, eps=0.0):
         """
             Fast predicate on subset indices (index). 
@@ -205,6 +177,23 @@ class Mesh3D:
         else:
             return np.flatnonzero(included_mask) 
 
+    ### function
+    def cal_volumns(self):
+        # Extract coordinates as (N, 4) for each x and y
+        x1, y1 = self.element_2D[:, ELEMENT_2D_NODE1_X],  self.element_2D[:, ELEMENT_2D_NODE1_Y]
+        x2, y2 = self.element_2D[:, ELEMENT_2D_NODE2_X],  self.element_2D[:, ELEMENT_2D_NODE2_Y]
+        x3, y3 = self.element_2D[:, ELEMENT_2D_NODE3_X],  self.element_2D[:, ELEMENT_2D_NODE3_Y]
+        x4, y4 = self.element_2D[:, ELEMENT_2D_NODE4_X],  self.element_2D[:, ELEMENT_2D_NODE4_Y]
+
+        # Shoelace formula for quadrilateral
+        voulmn = 0.5 * np.abs(
+            x1*y2 + x2*y3 + x3*y4 + x4*y1 -
+            (y1*x2 + y2*x3 + y3*x4 + y4*x1)
+        )
+
+        # Store back into column 13
+        self.element_2D[:, ELEMENT_2D_VOLUMN] = voulmn
+        
     def assign_metal(self, elements, density, total_volume, isRandomSeed=False):
         """
         Randomly pick elements (from 'elements' rows) until reaching density% of total_volume.
@@ -340,6 +329,7 @@ class Mesh3D:
         
     def organize_empty(self):
         self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
+        self.node_2D_to_3D[:] = -1
         
     def drag(self, element_size: float, begin: float, end: float):
         ### calculate drag_num & element_size
@@ -425,35 +415,33 @@ class Mesh3D:
 
     def engine(self, object_list):
         for obj in object_list:
-            begin_z = obj["begin_z"]
-            for layer in obj["layers"]:
+            for index, layer in enumerate(obj["layers"]):
                 self.organize(layer["areas"])
-                self.drag(layer["element_size"], begin_z, layer["z"])
-                begin_z = layer["z"]
+                self.drag(layer["element_size"], obj[index]["z"], obj[index+1]["z"])
         self.equivalence()
         
     ### equivalence
-    def equivalence(self, eps=1e-8):
+    def equivalence(self, eps=1e-8, boundary:list=None):
+        nodes = self.nodes[:self.node_num]
+        
         # Quantize (avoid float-equality issues)
-        q = np.round(self.nodes / eps).astype(np.int32)
+        q = np.round(nodes / eps).astype(np.int32)
 
         # Unique on quantized rows
-        _, inverse, keep_idx = np.unique(q, axis=0, return_inverse=True, return_index=True)
-
+        nodes, inverse = np.unique(q, axis=0, return_inverse=True)
+        
         # Remap element connectivity to canonical indices
         self.elements = inverse[self.elements]
-
-        # Pick node IDs from the first occurrence (you can change policy if needed)
-        self.node_ids = self.node_ids[keep_idx]
-
-        self.nodes = self.nodes[keep_idx]
+        self.nodes = nodes.astype(np.float32)
+        self.node_num = len(self.nodes)
 
     ### result
     def get(self):
+        comps = self.comps
         elements = self.elements[:self.element_num]
         element_comps = self.element_comps[:self.element_num]
         nodes = self.nodes[:self.node_num]
-        return elements, element_comps, nodes
+        return comps, elements, element_comps, nodes
 
     ### debug
     def show_info(self):

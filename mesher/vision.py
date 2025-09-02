@@ -21,13 +21,13 @@ class Vision:
         ### Build the cell
         n = self.elements.shape[0]
         cells = np.hstack([np.column_stack([np.full((n,1), 8, dtype=self.elements.dtype), self.elements]).ravel()])
-
+        
         ### Cell types
         celltypes = np.full(n, pv.CellType.HEXAHEDRON, dtype=np.uint8)
-
+        
         ### Create grid
         grid = pv.UnstructuredGrid(cells, celltypes, self.nodes)
-
+        
         ### Attach component ids as cell data for coloring
         grid.cell_data['comp'] = self.element_comps.astype(np.int32)
         
@@ -55,8 +55,8 @@ class Vision:
         )
         
         legend = [[f"comp {v}: {int(c)} elems", colors[i]] for i, (v, c) in enumerate(zip(vals, counts))]
-        legend = [[f"Node Num: {self.nodes.size}", "black"]] + legend
-        legend = [[f"Elem Num: {self.elements.size}", "black"]] + legend
+        legend = [[f"Node Num: {len(self.nodes)}", "black"]] + legend
+        legend = [[f"Elem Num: {len(self.elements)}", "black"]] + legend
         
         plotter.add_legend(legend, loc='upper left', bcolor='white', border=True) 
         plotter.add_axes()

@@ -95,7 +95,7 @@ mesh3D_obj.drag(1,20,30)
 mesh3D_obj.show_info()
 
 vision_obj = Vision()
-elements, element_comps, nodes = mesh3D_obj.get()
+comps, elements, element_comps, nodes = mesh3D_obj.get()
 vision_obj.set(elements, element_comps, nodes)
 vision_obj.show()
         
