@@ -421,19 +421,76 @@ class Mesh3D:
         self.equivalence()
         
     ### equivalence
-    def equivalence(self, eps=1e-8, boundary:list=None):
-        nodes = self.nodes[:self.node_num]
-        
-        # Quantize (avoid float-equality issues)
-        q = np.round(nodes / eps).astype(np.int32)
+    def equivalence(self, eps=1e-8, isLayer=Fals):
+        nodes = np.asarray(self.nodes, dtype=np.float64, order='C')
+        elements = np.asarray(self.elements, order='C')
 
-        # Unique on quantized rows
-        nodes, inverse = np.unique(q, axis=0, return_inverse=True)
+        # Quantize
+        qx = np.round(nodes[:, 0] / eps).astype(np.int64, copy=False)
+        qy = np.round(nodes[:, 1] / eps).astype(np.int64, copy=False)
+        qz = np.round(nodes[:, 2] / eps ).astype(np.int64, copy=False)
         
-        # Remap element connectivity to canonical indices
-        self.elements = inverse[self.elements]
-        self.nodes = nodes.astype(np.float32)
-        self.node_num = len(self.nodes)
+        if not isLayer:
+            # Sort by (qz, qx, qy)
+            order = np.lexsort((qy, qx, qz))  # primary is last key => qz, then qx, then qy
+            qz_s = qz[order]; qx_s = qx[order]; qy_s = qy[order]
+
+            # Run-length unique over sorted triples
+            same_as_prev = np.zeros(qz_s.shape[0], dtype=bool)
+            same_as_prev[1:] = (qz_s[1:] == qz_s[:-1]) & (qx_s[1:] == qx_s[:-1]) & (qy_s[1:] == qy_s[:-1])
+            group_id_sorted = np.cumsum(~same_as_prev) - 1  # 0..n_unique-1
+
+            # Invert sorting to get "inverse" mapping for original node order
+            inv_order = np.empty_like(order)
+            inv_order[order] = np.arange(order.size, dtype=order.dtype)
+            inverse = group_id_sorted[inv_order].astype(np.int32, copy=False)
+
+            # Extract unique nodes (keep first occurrence)
+            unique_mask_sorted = ~same_as_prev
+            unique_nodes = nodes[order[unique_mask_sorted]].astype(np.float32, copy=False)
+
+            # Remap elements IN-PLACE (no extra big allocation)
+            np.take(inverse, elements, out=elements)
+            self.nodes = unique_nodes
+            self.elements = elements
+        else:
+            # Identify layers by qz
+            layers, layer_idx = np.unique(qz, return_inverse=True)  # layer_idx: 0..(L-1)
+
+            inverse = np.empty(nodes.shape[0], dtype=np.int32)
+            unique_nodes_list = []
+
+            next_base = 0
+            for L in range(layers.size):
+                # nodes in this layer
+                mask = (layer_idx == L)
+                idx = np.nonzero(mask)[0]
+
+                # dedup on (qx,qy) within the layer
+                qx_i = qx[idx]; qy_i = qy[idx]
+                order = np.lexsort((qy_i, qx_i))
+                qx_s = qx_i[order]; qy_s = qy_i[order]
+
+                same = np.zeros(order.size, dtype=bool)
+                same[1:] = (qx_s[1:] == qx_s[:-1]) & (qy_s[1:] == qy_s[:-1])
+
+                gid_sorted = np.cumsum(~same) - 1
+                inv_order = np.empty_like(order)
+                inv_order[order] = np.arange(order.size)
+                inv_local = gid_sorted[inv_order].astype(np.int32, copy=False)
+
+                # fill global inverse with global ids offset by next_base
+                inverse[idx] = inv_local + next_base
+
+                # collect unique nodes for this layer
+                uniq_idx_local = idx[order[~same]]
+                unique_nodes_list.append(nodes[uniq_idx_local].astype(np.float32, copy=False))
+                next_base += uniq_idx_local.size
+                
+            # Remap elements IN-PLACE (no extra big allocation)
+            np.take(inverse, elements, out=elements)
+            self.nodes = np.vstack(unique_nodes_list)
+            self.elements = elements
 
     ### result
     def get(self):

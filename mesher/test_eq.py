@@ -33,10 +33,11 @@ mesh3D_obj.element_num = len(elements)
 mesh3D_obj.nodes = np.array(nodes, dtype=np.float32)
 mesh3D_obj.node_num = len(nodes)
 
-mesh3D_obj.equivalence()
+mesh3D_obj.show_info()
+mesh3D_obj.equivalence(isLayer=True)
+mesh3D_obj.show_info()
 
 ### show the result
-mesh3D_obj.show_info()
 vision_obj = Vision()
 comps, elements, element_comps, nodes = mesh3D_obj.get()
 vision_obj.set(elements, element_comps, nodes)
