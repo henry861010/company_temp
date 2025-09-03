@@ -415,7 +415,8 @@ class Mesh3D:
 
     def engine(self, object_list):
         for obj in object_list:
-            for index, layer in enumerate(obj["layers"]):
+            self.organize_empty()
+            for index, layer in enumerate(obj[:-1]):
                 self.organize(layer["areas"])
                 self.drag(layer["element_size"], obj[index]["z"], obj[index+1]["z"])
         self.equivalence()
