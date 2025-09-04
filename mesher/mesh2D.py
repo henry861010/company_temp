@@ -1,18 +1,15 @@
 import numpy as np
+import time
 import math
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
-from my_math import *
-
-import time
-import matplotlib.pyplot as plt
 from matplotlib.collections import PolyCollection
+import utils
+from utils.math import *
 
 class Mesh2D:
     def __init__(self):
         ### process
         self.element_2D = np.empty((0, 4), dtype=np.int32)
-        self.element_2D_nodes = np.empty((0), dtype=np.int32)
         self.node_2D = np.empty((0, 2), dtype=np.float32)
         
         ### others
@@ -72,6 +69,9 @@ class Mesh2D:
             new_capacity = max(required, int(current_capacity * 1.5))
             extra = new_capacity - current_capacity
             self.element_2D = np.vstack([self.element_2D, np.empty((extra, 4), dtype=np.int32)])
+        
+    def get_outline(self, isCoordinate=False):
+        return utils.get_outline(self.element_2D, self.node_2D, isCoordinate)
         
     ### wrap operation
     def build_checkerboard(self, element_size, x_list, y_list, comp_id=0):

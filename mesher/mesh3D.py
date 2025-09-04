@@ -177,7 +177,7 @@ class Mesh3D:
         else:
             return np.flatnonzero(included_mask) 
 
-    ### function
+    ### 2.5D function
     def cal_volumns(self):
         # Extract coordinates as (N, 4) for each x and y
         x1, y1 = self.element_2D[:, ELEMENT_2D_NODE1_X],  self.element_2D[:, ELEMENT_2D_NODE1_Y]
@@ -420,6 +420,40 @@ class Mesh3D:
                 self.organize(layer["areas"])
                 self.drag(layer["element_size"], obj[index]["z"], obj[index+1]["z"])
         self.equivalence()
+        
+    ### 3D function
+    def add_node(self, x, y, z):
+        self._pre_allocate_nodes()
+        node_index = self.node_num
+        self.nodes[node_index] = np.array([x, y, z], dtype=np.float32)
+        self.node_num += 1
+        return node_index
+
+    def add_nodes(self, node_coords):
+        if isinstance(node_coords, list):
+            node_coords = np.array(node_coords, dtype=np.float32)
+            
+        node_num = len(node_coords)
+        self._pre_allocate_nodes(node_num)
+        node_indices = np.arange(node_num,dtype=np.int32) + self.node_num
+        self.nodes[node_indices] = node_coords
+        self.node_num += node_num
+        return node_indices
+    
+    def add_element(self, node1, node2, node3, node4, node5, node6, node7, node8, comp="default", isReorder=True):
+        if comp not in self.comps:
+            self.comps[comp] = len(self.comps)
+        comp_id = self.comps[comp]
+        
+        nodes = np.array([node1, node2, node3, node4, node5, node6, node7, node8], dtype=np.float32)
+                
+        indices = self.add_nodes(nodes)
+        element_index = self.element_num
+        self._pre_allocate_elements()
+        self.elements[element_index] = indices
+        self.element_comps[element_index] = comp_id
+        self.element_num += 1
+        return element_index
         
     ### equivalence
     def equivalence(self, eps=1e-8, isLayer=False):
