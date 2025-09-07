@@ -1,7 +1,11 @@
 import numpy as np
 import time
-from matplotlib.patches import Polygon
-from matplotlib.path import Path
+from utils.search_face import search_face_element
+
+'''
+    OBJECTIVE: 
+        1. Used for the 2.5D Auotomation Framework (engine.py)
+'''
 
 ELEMENT_LEN = 8
 NODE_LEN = 3
@@ -42,16 +46,18 @@ class Mesh3D:
         self.node_2D_to_3D = np.zeros((0), dtype=np.int32)
         
     ### initial
-    def initial(self, parser:'Mesh2D'):
-        element_coords, element_node_ids, node_coords, node_ids = parser.get()
-        self.element_2D = np.empty((len(element_coords), ELEMENT_2D_LEN), dtype=np.float32)
+    def set_2D(self, mesh2D:'Mesh2D'):
+        nodes, elements = mesh2D.get_byIndex()
         
+        element_coords = nodes[elements][:,:,:2]
+        self.element_2D = np.empty((len(elements), ELEMENT_2D_LEN), dtype=np.float32)
         self.element_2D[:,ELEMENT_2D_NODE1_X:ELEMENT_2D_NODE4_Y+1] = element_coords.reshape(element_coords.shape[0], 8)
         self.element_2D[:,ELEMENT_2D_COMP_ID] = 0
-        self.element_2D_nodes = element_node_ids
         
-        self.node_2D = node_coords
-        self.node_2D_to_3D = np.zeros(len(node_coords), dtype=np.int32) - 1
+        self.element_2D_nodes = elements
+        
+        self.node_2D = nodes[:,:2]
+        self.node_2D_to_3D = np.zeros(len(nodes), dtype=np.int32) - 1
         
         self.cal_volumns()
         
@@ -78,61 +84,6 @@ class Mesh3D:
             self.element_comps = np.concatenate([self.element_comps, np.empty(extra, dtype=np.int32)])
         
     ### searching
-    def search_face(self, elements, type, dim, index=None, eps=0.0):
-        """
-            Fast predicate on subset indices (index). 
-            Returns a boolean mask aligned to index (or to all rows if index is None).
-        """
-        rows = index if index is not None else slice(None)
-        
-        # gather 4 corners
-        cols = np.array([ELEMENT_2D_NODE1_X, ELEMENT_2D_NODE2_X, ELEMENT_2D_NODE3_X, ELEMENT_2D_NODE4_X], dtype=int)
-        x4 = elements[np.ix_(rows, cols)]
-        cols = np.array([ELEMENT_2D_NODE1_Y, ELEMENT_2D_NODE2_Y, ELEMENT_2D_NODE3_Y, ELEMENT_2D_NODE4_Y], dtype=int)
-        y4 = elements[np.ix_(rows, cols)]
-        
-        ### max/min of each elements
-        min_x = x4.min(axis=1)
-        max_x = x4.max(axis=1)
-        min_y = y4.min(axis=1)
-        max_y = y4.max(axis=1)
-
-        if type == "BOX":
-            bl_x, bl_y, tr_x, tr_y = dim
-            if eps:
-                bl_x -= eps
-                bl_y -= eps
-                tr_x += eps
-                tr_y += eps
-            return (min_x >= bl_x) & (max_x <= tr_x) & (min_y >= bl_y) & (max_y <= tr_y)
-
-        elif type == "CYLINDER":
-            cx, cy, r = dim
-            rr = r*r + 0.0
-            if eps:
-                rr = (r + eps) * (r + eps)
-            dist = (x4 - cx)**2 + (y4 - cy)**2
-            return np.all(dist <= rr, axis=1)
-        
-        elif type == "POLYGON":
-            radiu = -1e-12
-            path = Path(np.asarray(dim, float))
-            
-            node1_list = self.element_2D[:, [ELEMENT_2D_NODE1_X,ELEMENT_2D_NODE1_Y]]
-            mask1 = path.contains_points(node1_list, radius=radiu)
-
-            node2_list = self.element_2D[:, [ELEMENT_2D_NODE2_X,ELEMENT_2D_NODE2_Y]]
-            mask2 = path.contains_points(node2_list, radius=radiu)
-            
-            node3_list = self.element_2D[:, [ELEMENT_2D_NODE3_X,ELEMENT_2D_NODE3_Y]]
-            mask3 = path.contains_points(node3_list, radius=radiu)
-            
-            node4_list = self.element_2D[:, [ELEMENT_2D_NODE4_X,ELEMENT_2D_NODE4_Y]]
-            mask4 = path.contains_points(node4_list, radius=radiu)
-            return mask1 & mask2 & mask3 & mask4
-        else:
-            raise ValueError(f"Unsupported type: {type}")
-
     def search_faces(self, elements, ranges=None, holes=None, returnMask=False):
         """
         Ranges-first progressive search using only index arrays (no big copies).
@@ -153,7 +104,7 @@ class Mesh3D:
             for r in ranges:
                 if len(canidate_indices) == 0:
                     break
-                submask = self.search_face(elements, r["type"], r["dim"], index=canidate_indices)
+                submask = search_face_element(elements[:,ELEMENT_2D_NODE1_X:], r["type"], r["dim"], index=canidate_indices, returnMask=True)
                 if np.any(submask):
                     hit_indices = canidate_indices[submask]
                     included_mask[hit_indices] = True
@@ -167,7 +118,7 @@ class Mesh3D:
             for h in holes:
                 if len(live_indices) == 0:
                     break
-                submask = self.search_face(elements, h["type"], h["dim"], index=live_indices)
+                submask = search_face_element(elements[:,ELEMENT_2D_NODE1_X:], h["type"], h["dim"], index=live_indices, returnMask=True)
                 if np.any(submask):
                     lose_indices = live_indices[submask]
                     included_mask[lose_indices] = False
@@ -413,13 +364,15 @@ class Mesh3D:
         self.node_2D_to_3D[:] = -1
         self.node_2D_to_3D[node2D_idx] = layer_nodes[-1]
 
-    def engine(self, object_list):
+    def engine(self, object_list, isEquivalence=True):
         for obj in object_list:
             self.organize_empty()
             for index, layer in enumerate(obj[:-1]):
                 self.organize(layer["areas"])
                 self.drag(layer["element_size"], obj[index]["z"], obj[index+1]["z"])
-        self.equivalence()
+                
+        if isEquivalence:
+            self.equivalence()
         
     ### 3D function
     def add_node(self, x, y, z):
@@ -456,85 +409,60 @@ class Mesh3D:
         return element_index
         
     ### equivalence
-    def equivalence(self, eps=1e-8, isLayer=False):
-        nodes = np.asarray(self.nodes, dtype=np.float64, order='C')
-        elements = np.asarray(self.elements, order='C')
-
-        # Quantize
-        qx = np.round(nodes[:, 0] / eps).astype(np.int64, copy=False)
-        qy = np.round(nodes[:, 1] / eps).astype(np.int64, copy=False)
-        qz = np.round(nodes[:, 2] / eps ).astype(np.int64, copy=False)
-        
-        if not isLayer:
-            # Sort by (qz, qx, qy)
-            order = np.lexsort((qy, qx, qz))  # primary is last key => qz, then qx, then qy
-            qz_s = qz[order]; qx_s = qx[order]; qy_s = qy[order]
-
-            # Run-length unique over sorted triples
-            same_as_prev = np.zeros(qz_s.shape[0], dtype=bool)
-            same_as_prev[1:] = (qz_s[1:] == qz_s[:-1]) & (qx_s[1:] == qx_s[:-1]) & (qy_s[1:] == qy_s[:-1])
-            group_id_sorted = np.cumsum(~same_as_prev) - 1  # 0..n_unique-1
-
-            # Invert sorting to get "inverse" mapping for original node order
-            inv_order = np.empty_like(order)
-            inv_order[order] = np.arange(order.size, dtype=order.dtype)
-            inverse = group_id_sorted[inv_order].astype(np.int32, copy=False)
-
-            # Extract unique nodes (keep first occurrence)
-            unique_mask_sorted = ~same_as_prev
-            unique_nodes = nodes[order[unique_mask_sorted]].astype(np.float32, copy=False)
-
-            # Remap elements IN-PLACE (no extra big allocation)
-            np.take(inverse, elements, out=elements)
-            self.nodes = unique_nodes
-            self.elements = elements
-        else:
-            # Identify layers by qz
-            layers, layer_idx = np.unique(qz, return_inverse=True)  # layer_idx: 0..(L-1)
-
-            inverse = np.empty(nodes.shape[0], dtype=np.int32)
-            unique_nodes_list = []
-
-            next_base = 0
-            for L in range(layers.size):
-                # nodes in this layer
-                mask = (layer_idx == L)
-                idx = np.nonzero(mask)[0]
-
-                # dedup on (qx,qy) within the layer
-                qx_i = qx[idx]; qy_i = qy[idx]
-                order = np.lexsort((qy_i, qx_i))
-                qx_s = qx_i[order]; qy_s = qy_i[order]
-
-                same = np.zeros(order.size, dtype=bool)
-                same[1:] = (qx_s[1:] == qx_s[:-1]) & (qy_s[1:] == qy_s[:-1])
-
-                gid_sorted = np.cumsum(~same) - 1
-                inv_order = np.empty_like(order)
-                inv_order[order] = np.arange(order.size)
-                inv_local = gid_sorted[inv_order].astype(np.int32, copy=False)
-
-                # fill global inverse with global ids offset by next_base
-                inverse[idx] = inv_local + next_base
-
-                # collect unique nodes for this layer
-                uniq_idx_local = idx[order[~same]]
-                unique_nodes_list.append(nodes[uniq_idx_local].astype(np.float32, copy=False))
-                next_base += uniq_idx_local.size
-                
-            # Remap elements IN-PLACE (no extra big allocation)
-            np.take(inverse, elements, out=elements)
-            self.nodes = np.vstack(unique_nodes_list)
-            self.elements = elements
-
-    ### result
-    def get(self):
-        comps = self.comps
+    '''
+        equivalence all node
+        NOTE:
+            1. the index of the element & node would reorder
+    '''
+    def equivalence(self, eps=1e-8):
         elements = self.elements[:self.element_num]
-        element_comps = self.element_comps[:self.element_num]
         nodes = self.nodes[:self.node_num]
-        return comps, elements, element_comps, nodes
+        new_elements, new_nodes = utils.equivalence(elements, nodes)
+        
+        self.elements  = new_elements
+        self.element_num = len(new_elements)
+        
+        self.nodes  = new_nodes
+        self.node_num = len(new_nodes)
 
+    ### access
+    '''
+        return:
+            1. nodes: coordinate of node [x, y, z]
+            2. elements: each element incldue indice of node in nodes
+            3. element_comps
+            4. comps: comp index -> comp_name
+    '''
+    def get_byIndex(self):
+        elements = self.elements[:self.element_num]
+        nodes = self.nodes[:self.node_num]
+        element_comps = self.element_comps[:self.element_num]
+        comps = self.comps
+        return nodes, elements, element_comps, comps
+
+    '''
+        return:
+            1. node_ids: ids of nodes
+            2. nodes: coordinate of node [x, y, z]
+            3. element_ids: ids of elements
+            4. elements: each element incldue id of node in nodes
+            5. element_coords: coordinates of elements
+            6. element_comps
+            7. comps: comp index -> comp_name
+    '''
+    def get(self):
+        elements = self.elements[:self.element_num]
+        nodes = self.nodes[:self.node_num]
+        element_comps = self.element_comps[:self.element_num]
+        comps = self.comps
+        
+        node_ids = np.arange(1, self.node_num+1, dtype=np.int32)
+        element_ids = np.arange(1, self.element_num+1, dtype=np.int32)
+        element_coords = nodes[elements]
+        elements_cdb = node_ids[elements]
+
+        return node_ids, nodes, element_ids, elements_cdb, element_coords, element_comps, comps
+    
     ### debug
     def show_info(self):
         print("[nodes]")
