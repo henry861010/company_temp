@@ -1,6 +1,7 @@
 import numpy as np
 import time
 from utils.search_face import search_face_element
+from utils.equivalence import equivalence
 
 '''
     OBJECTIVE: 
@@ -181,7 +182,7 @@ class Mesh3D:
             holes  = area.get("holes")
             area_indices  = self.search_faces(self.element_2D, ranges, holes)  # boolean over elements
             if len(area_indices) == 0:
-                return
+                continue
 
             ### Working pool: local indices into area_idx
             remaining_indices = np.arange(len(area_indices), dtype=np.int32)
@@ -417,7 +418,7 @@ class Mesh3D:
     def equivalence(self, eps=1e-8):
         elements = self.elements[:self.element_num]
         nodes = self.nodes[:self.node_num]
-        new_elements, new_nodes = utils.equivalence(elements, nodes)
+        new_elements, new_nodes = equivalence(elements, nodes)
         
         self.elements  = new_elements
         self.element_num = len(new_elements)
@@ -462,6 +463,13 @@ class Mesh3D:
         elements_cdb = node_ids[elements]
 
         return node_ids, nodes, element_ids, elements_cdb, element_coords, element_comps, comps
+    
+    def get_2D_mesh(self):
+        element_coord_2D = self.nodes[self.elements[:,:4],:2]
+        means = element_coord_2D.mean(axis=1)
+        _, indices = np.unique(means, return_index=True, axis=0)
+        print(element_coord_2D[indices])
+        return element_coord_2D[indices]
     
     ### debug
     def show_info(self):
