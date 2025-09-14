@@ -465,11 +465,10 @@ class Mesh3D:
         return node_ids, nodes, element_ids, elements_cdb, element_coords, element_comps, comps
     
     def get_2D_mesh(self):
-        element_coord_2D = self.nodes[self.elements[:,:4],:2]
-        means = element_coord_2D.mean(axis=1)
+        element_coords = self.nodes[self.elements[:,:4],:2]
+        means = element_coords.mean(axis=1)
         _, indices = np.unique(means, return_index=True, axis=0)
-        print(element_coord_2D[indices])
-        return element_coord_2D[indices]
+        return element_coords[indices]
     
     ### debug
     def show_info(self):

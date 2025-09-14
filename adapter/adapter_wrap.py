@@ -336,3 +336,8 @@ def build_section(cdb_obj: 'Mesh2D', element_size, section_list):
             outline_list.append(outline)
             
     return outline_list
+
+def get_expanding(cdb_obj: 'Mesh2D', outline_list, element_size, pattern_lines_vertical: list, pattern_lines_horizon: list):
+    return [element_size for _ in outline_list]
+
+def block_overlap(block_list):
