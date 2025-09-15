@@ -157,48 +157,138 @@ class Region:
                         for k in range(left, i):
                             self.cell_type[k][j] |= TYPE_TARGET
    
-    def set_edge(self, gap, target_mask=TYPE_DIE):
-        def vertical_len(i, j):
-            top = j+1
+    def set_edge(self, gap):
+        INT_MAX = 1000000
+        def vertical(left, right, j):
+            if left == -1:
+                return j, j, INT_MAX
+            if right == self.cell_num_x:
+                return j, j, INT_MAX
+            
+            target_mask = TYPE_DIE | TYPE_TARGET
+            
+            ### find top
+            top = j
             while top < self.cell_num_y:
-                if self.cell_type[i+1][top] & target_mask:
-                    top -= 1
+                if self.cell_type[left][top]&target_mask and self.cell_type[right][top]&target_mask:
+                    break
+                elif not self.cell_type[left][top]&target_mask and not self.cell_type[right][top]&target_mask:
                     break
                 top += 1
-            bottom = j-1
+            ### find bottom
+            bottom = j
             while 0 <= bottom:
-                if self.cell_type[i+1][bottom] & target_mask:
-                    bottom += 1
+                if self.cell_type[left][bottom]&target_mask and self.cell_type[right][bottom]&target_mask:
+                    break
+                elif not self.cell_type[left][bottom]&target_mask and not self.cell_type[right][bottom]&target_mask:
                     break
                 bottom -= 1
-            l = self.table_y_dim[top+1] - self.table_y_dim[bottom]
-            return l, bottom, top
-        
-        def horizon_len(i, j):
-            right = i+1
+            return bottom, top, self.table_y_dim[top]-self.table_y_dim[bottom+1]
+
+        def horizon(bottom, top, i):
+            if bottom == -1:
+                return i, i, INT_MAX
+            if top == self.cell_num_y:
+                return i, i, INT_MAX
+            
+            target_mask = TYPE_DIE | TYPE_TARGET
+            
+            ### find top
+            right = i
             while right < self.cell_num_x:
-                if self.cell_type[right][j+1] & target_mask:
-                    right -= 1
+                if self.cell_type[right][bottom]&target_mask and self.cell_type[right][top]&target_mask:
+                    break
+                elif not self.cell_type[right][bottom]&target_mask and not self.cell_type[right][top]&target_mask:
                     break
                 right += 1
-            left = i-1
+
+            ### find bottom
+            left = i
             while 0 <= left:
-                if self.cell_type[left][j+1] & target_mask:
-                    left += 1
+                if self.cell_type[left][bottom]&target_mask and self.cell_type[left][top]&target_mask:
+                    break
+                elif not self.cell_type[left][bottom]&target_mask and not self.cell_type[left][top]&target_mask:
                     break
                 left -= 1
-            l = self.table_x_dim[right+1] - self.table_x_dim[left]
-            return l, left, right
+            return left, right, self.table_x_dim[right]-self.table_x_dim[left+1]
         
+        target_mask = TYPE_DIE | TYPE_TARGET
+        isChange = False
+        while True:
+            isSet = False
+            for i in range(0, self.cell_num_x):
+                for j in range(0, self.cell_num_y):
+                    if self.cell_type[i][j] & target_mask:
+                        ### go right
+                        if i+1 < self.cell_num_x and not self.cell_type[i+1][j] & target_mask:
+                            bottom, top, l = vertical(i, i+1, j)
+                            if l <= gap:
+                                _, bottom_right, _ = horizon(bottom, bottom+1, i+1)
+                                _, top_right, _ = horizon(top-1, top, i+1)
+                                right = max(top_right, bottom_right)
+                                index = i+1
+                                while index < right:
+                                    isSet = True
+                                    isChange = True
+                                    self.cell_type[index,bottom+1:top] |= TYPE_TARGET
+                                    index += 1
+                        ### go left
+                        if 0 <= i-1 and not self.cell_type[i-1][j] & target_mask:
+                            bottom, top, l = vertical(i-1, i, j)
+                            if l <= gap:
+                                bottom_left, _, _ = horizon(bottom, bottom+1, i-1)
+                                top_left, _, _ = horizon(top-1, top, i-1)
+                                left = min(top_left, bottom_left)
+                                index = i-1
+                                while left < index:
+                                    isSet = True
+                                    isChange = True
+                                    self.cell_type[index,bottom+1:top] |= TYPE_TARGET
+                                    index -= 1
+                        ### go top
+                        if j+1 < self.cell_num_y and not self.cell_type[i][j+1] & target_mask:
+                            left, right, l = horizon(j, j+1, i)
+                            if l <= gap:
+                                _, right_top, _ = vertical(left, left+1, j+1)
+                                _, left_top, _ = vertical(right-1, right, j+1)
+                                top = max(left_top, right_top)
+                                index = j+1
+                                while index < top:
+                                    isSet = True
+                                    isChange = True
+                                    self.cell_type[left+1:right,index] |= TYPE_TARGET
+                                    index += 1
+                        ### go bottom
+                        if 0 <= j-1 and not self.cell_type[i][j-1] & target_mask:
+                            left, right, l = horizon(j-1, j, i)
+                            if l <= gap:
+                                right_bottom, _, _ = vertical(left, left+1, j-1)
+                                left_bottom, _, _ = vertical(right-1, right, j-1)
+                                bottom = min(left_bottom, right_bottom)
+                                index = j-1
+                                while bottom < index:
+                                    isSet = True
+                                    isChange = True
+                                    self.cell_type[left+1:right,index] |= TYPE_TARGET
+                                    index -= 1
+
+            if not isSet:
+                break
+        return isChange
+    
+    def set_round(self, gap):
+        while True:
+            self.set_gap(gap*2)
+            isSet = self.set_edge(gap)    
+            if not isSet:
+                break
+    
+    def set_clear(self):
         for i in range(0, self.cell_num_x):
             for j in range(0, self.cell_num_y):
-                if self.cell_type[i][j] & target_mask:
-                    ### go right
-                    if i+1 < self.cell_num_x and not self.cell_type[i+1][j] & target_mask:
-                        l, bottom, top = vertical_len(i+1, j)
-                        if l < gap:
-                            
-   
+                if self.cell_type[i][j] & TYPE_TARGET:
+                    self.cell_type[i][j] = TYPE_EMPTY
+        
     ### get
     def get_outline(self, target_mask=TYPE_TARGET):
         dbu=1
@@ -337,14 +427,40 @@ class Region:
 
         plt.show()
         
+element_size = 1.5*5
+'''
+### test1
 region_obj = Region()
-
 face1 = {
     "type": "POLYGON",
-    "dim": [[0,0], [10,0], [10,20], [20,20], [20,40],[30,40], [30,60],[35,60],[35,10],[15,10],[15,0],[40,0],[40,70],[0,70]] 
+    "dim": [[0,0], [10,0], [10,5], [30,5], [30,10],[60,10],[60,15], [30,15],[20,15],[20,20],[15,20],[15, 30],[10,30],[10,15],[0,15]] 
 }
 region_obj.set(face_list=[face1])
-region_obj.set_gap(5)
+region_obj.set_edge(element_size)
+region_obj.show_graph()
+
+### test2
+region_obj = Region()
+face1 = {
+    "type": "POLYGON",
+    "dim": [[0,0],[10,0],[10,10],[30,10],[30,6],[40,6],[40,10],[60,10],[60,20],[40,20],[35,20],[35,25],[30,25],[30,30],[10,30],[10,20],[0,20]] 
+}
+region_obj.set(face_list=[face1])
+region_obj.set_edge(element_size)
+region_obj.show_graph()
+'''
+### test3
+region_obj = Region()
+face1 = {
+    "type": "POLYGON",
+    "dim": [[0,0],[50,0],[50,20],[47,20],[47,10],[10,10],[10,30],[0,30]] 
+}
+face2 = {
+    "type": "POLYGON",
+    "dim": [[20,15],[30,15],[30,30],[35,30],[35,40],[20,40]] 
+}
+region_obj.set(face_list=[face1, face2])
+region_obj.set_round(element_size)
 region_obj.show_graph()
 
 outline_list = region_obj.get_outline(target_mask=2)
