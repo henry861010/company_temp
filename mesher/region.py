@@ -283,10 +283,10 @@ class Region:
             if not isSet:
                 break
     
-    def set_clear(self):
+    def set_clear(self, clear_mask=TYPE_TARGET):
         for i in range(0, self.cell_num_x):
             for j in range(0, self.cell_num_y):
-                if self.cell_type[i][j] & TYPE_TARGET:
+                if self.cell_type[i][j] & clear_mask:
                     self.cell_type[i][j] = TYPE_EMPTY
         
     ### get
@@ -428,7 +428,7 @@ class Region:
         plt.show()
         
 element_size = 1.5*5
-'''
+
 ### test1
 region_obj = Region()
 face1 = {
@@ -436,7 +436,7 @@ face1 = {
     "dim": [[0,0], [10,0], [10,5], [30,5], [30,10],[60,10],[60,15], [30,15],[20,15],[20,20],[15,20],[15, 30],[10,30],[10,15],[0,15]] 
 }
 region_obj.set(face_list=[face1])
-region_obj.set_edge(element_size)
+region_obj.set_round(element_size)
 region_obj.show_graph()
 
 ### test2
@@ -446,9 +446,9 @@ face1 = {
     "dim": [[0,0],[10,0],[10,10],[30,10],[30,6],[40,6],[40,10],[60,10],[60,20],[40,20],[35,20],[35,25],[30,25],[30,30],[10,30],[10,20],[0,20]] 
 }
 region_obj.set(face_list=[face1])
-region_obj.set_edge(element_size)
+region_obj.set_round(element_size)
 region_obj.show_graph()
-'''
+
 ### test3
 region_obj = Region()
 face1 = {
