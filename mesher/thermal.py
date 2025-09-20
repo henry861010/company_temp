@@ -30,7 +30,6 @@ def cal_vertical(len_x, len_y, sub_len, density, space=100):
         x2 = (idx + 1) * sub_len
         
         coords.append([x1, 0, x2, len_y])
-        coords.append([x1, 0, x2, len_y])
     return coords
     
 def cal_horizon(len_x, len_y, sub_len, density, space=100):
@@ -59,7 +58,7 @@ def cal_horizon(len_x, len_y, sub_len, density, space=100):
         coords.append([0, y1, len_x, y2])
 
     return coords
-    
+
 def cal_center(len_x, len_y, coords1, coords2, density):
     """
     Pick random intersection cells (rectangles) between coords1 & coords2
@@ -106,28 +105,73 @@ def cal_center(len_x, len_y, coords1, coords2, density):
             break
 
     return target_coords
-
-def generate_area(len_x, len_y, metal_coords, mat_base, mat_metal):
-    area_list = []
-    
-    ### base area
-    area_list.append({
-        "type": "BOX",
-        "dim": [0, 0,len_x, len_y],
-        "material": mat_base
-    })
-    
-    ### metal are
-    for metal_coord in metal_coords:
-        area_list.append({
-            "type": "BOX",
-            "dim": [metal_coord[0], metal_coord[1], metal_coord[2], metal_coord[3]],
-            "material": mat_metal
-        })
-        
-    return area_list
             
+def cal_fraction_vertical(target_coord, constrain_coords, len_y, fract_len=1):
+    x1 = target_coord[0]
+    x3 = target_coord[2]
+    
+    ### find the intersection
+    intersections = []
+    for constrain_coord in constrain_coords:
+        if x1 <= constrain_coord[0] and constrain_coord[2] <= x3:
+            intersections.append([constrain_coord[1], constrain_coord[3]])
+    intersections = sorted(intersections, key=lambda x: (x[0], x[1]))
+            
+    ### got the non-intersection
+    non_intersections = []
+    begin = 0
+    for intersections in intersections:
+        if begin < intersections[0]:
+            non_intersections.append([begin, intersections[1]])
+            begin = intersections[1]
+        else:
+            begin = intersections[1]
+    if begin != len_y:
+        non_intersections.append([begin, len_y])
+        
+    ### select the fraction from non-intersection
+    random_int_index = random.randint(0, len(non_intersections)-1)
+    target_len = non_intersections[random_int_index][1] - non_intersections[random_int_index][0]
+    all_fract_num = max(1, int(target_len / fract_len))
+    random_index = random.randint(1, all_fract_num-2)
+    
+    y1 = non_intersections[random_int_index][0] + random_index * fract_len
+    y3 = non_intersections[random_int_index][0] + (random_index + 1) * fract_len
+    return [x1, y1, x3, y3]
 
+def cal_fraction_horizon(target_coord, constrain_coords, len_x, fract_len=1):
+    y1 = target_coord[1]
+    y3 = target_coord[3]
+    
+    ### find the intersection
+    intersections = []
+    for constrain_coord in constrain_coords:
+        if y1 <= constrain_coord[1] and constrain_coord[3] <= y3:
+            intersections.append([constrain_coord[0], constrain_coord[2]])
+    intersections = sorted(intersections, key=lambda x: (x[0], x[1]))
+            
+    ### got the non-intersection
+    non_intersections = []
+    begin = 0
+    for intersections in intersections:
+        if begin < intersections[0]:
+            non_intersections.append([begin, intersections[1]])
+            begin = intersections[1]
+        else:
+            begin = intersections[1]
+    if begin != len_y:
+        non_intersections.append([begin, len_y])
+        
+    ### select the fraction from non-intersection
+    random_int_index = random.randint(0, len(non_intersections)-1)
+    target_len = non_intersections[random_int_index][1] - non_intersections[random_int_index][0]
+    all_fract_num = max(1, int(target_len / fract_len))
+    random_index = random.randint(1, all_fract_num-2)
+    
+    x1 = non_intersections[random_int_index][0] + random_index * fract_len
+    x3 = non_intersections[random_int_index][0] + (random_index + 1) * fract_len
+    return [x1, y1, x3, y3]
+    
 layer_thk_list = [5,5,5,5,5,5,5,5,5]
 layer_len_list = [5,5,5,5,5,5,5,5,5]
 layer_density_list = [40,5,40,5,40,5,40,5,40]
@@ -135,8 +179,8 @@ material_base = "PM"
 material_metal = "METAL"
 
 element_size = 1
-len_x = 500
-len_y = 500
+len_x = 100
+len_y = 100
 
 mesh2D_obj = Mesh2D()
 mesh2D_obj.mesh_checkerboard(element_size, [0,len_x], [0,len_y])
@@ -145,35 +189,79 @@ mesh3D_obj = Mesh3D()
 mesh3D_obj.set_2D(mesh2D_obj)
 
 ### calculate the metal area
-coords_list = []
+metal_coords_list = []
 isVertical = True
-for i, (len, density) in enumerate(zip(layer_len_list, layer_density_list)):
+for i, (sub_len, density) in enumerate(zip(layer_len_list, layer_density_list)):
     if i % 2 == 0:
         if isVertical:
-            print(f"{i} vertical")
-            coords = cal_vertical(len_x, len_y, len, density)
+            coords = cal_vertical(len_x, len_y, sub_len, density)
             isVertical = False
         else:
-            print(f"{i} horizon")
-            coords = cal_horizon(len_x, len_y, len, density)
+            coords = cal_horizon(len_x, len_y, sub_len, density)
             isVertical = True
-        coords_list.append(coords)
+        metal_coords_list.append(coords)
     else:
-        print(f"{i} center")
-        coords_list.append([])
+        metal_coords_list.append([])
 
+### calculate the center area
 for i, density in enumerate(layer_density_list):
     if i % 2 == 1:
-        pre_coords = coords_list[i-1]
-        post_coords = coords_list[i+1]
-        coords_list[i] = cal_center(len_x, len_y, pre_coords, post_coords, density)
+        pre_coords = metal_coords_list[i-1]
+        post_coords = metal_coords_list[i+1]
+        metal_coords_list[i] = cal_center(len_x, len_y, pre_coords, post_coords, density)
         
+### calculate the fraction
+isVertical = True
+fract_coords_list = []
+for i, metal_coords in enumerate(metal_coords_list):
+    if i % 2 == 0:
+        fracted_coords = []
+
+        bottom_constrains = metal_coords_list[i-1] if i > 0 else []
+        upper_constrains = metal_coords_list[i+1] if i+1 < len(metal_coords_list) else []
+        constrains = bottom_constrains + upper_constrains
+         
+        if isVertical:
+            fracted_coords = []
+            for metal_coord in metal_coords:
+                fracted_coord = cal_fraction_vertical(metal_coord, constrains, len_y)
+                fracted_coords.append(fracted_coord)
+            isVertical = False
+        else:
+            for metal_coord in metal_coords:
+                fracted_coord = cal_fraction_horizon(metal_coord, constrains, len_x)
+                fracted_coords.append(fracted_coord)
+            isVertical = True
+        fract_coords_list.append(fracted_coords)
+    else:
+        fract_coords_list.append([])
+
 ### begin to drag
 z = 0
-for coords, thk in zip(coords_list, layer_thk_list):
-    areas = generate_area(len_x, len_y, coords, material_base, material_metal)
-    for area in areas:
-        mesh3D_obj.organize(area)
+for metal_coords, fract_coords, thk in zip(metal_coords_list, fract_coords_list, layer_thk_list):
+    ### base area
+    mesh3D_obj.organize({
+        "type": "BOX",
+        "dim": [0, 0,len_x, len_y],
+        "material": material_base
+    })
+    
+    ### metal area
+    for metal_coord in metal_coords:
+        mesh3D_obj.organize({
+            "type": "BOX",
+            "dim": [metal_coord[0], metal_coord[1], metal_coord[2], metal_coord[3]],
+            "material": material_metal
+        })
+
+    ### fract area
+    for fract_coord in fract_coords:
+        mesh3D_obj.organize({
+            "type": "BOX",
+            "dim": [fract_coord[0], fract_coord[1], fract_coord[2], fract_coord[3]],
+            "material": material_base
+        })
+    
     mesh3D_obj.drag(element_size, z, z + thk)
     z += thk
     
