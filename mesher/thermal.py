@@ -3,7 +3,8 @@ from mesh3D import Mesh3D
 from mesh2D import Mesh2D
 from vision import Vision
 
-random.seed(1)
+#random.seed(1)
+random.seed()
 
 def cal_vertical(len_x, len_y, sub_len, density, space=100):
     """
@@ -122,7 +123,7 @@ def cal_fraction_vertical(target_coord, constrain_coords, len_y, fract_len=1):
     begin = 0
     for intersections in intersections:
         if begin < intersections[0]:
-            non_intersections.append([begin, intersections[1]])
+            non_intersections.append([begin, intersections[0]])
             begin = intersections[1]
         else:
             begin = intersections[1]
@@ -155,7 +156,7 @@ def cal_fraction_horizon(target_coord, constrain_coords, len_x, fract_len=1):
     begin = 0
     for intersections in intersections:
         if begin < intersections[0]:
-            non_intersections.append([begin, intersections[1]])
+            non_intersections.append([begin, intersections[0]])
             begin = intersections[1]
         else:
             begin = intersections[1]
@@ -172,9 +173,9 @@ def cal_fraction_horizon(target_coord, constrain_coords, len_x, fract_len=1):
     x3 = non_intersections[random_int_index][0] + (random_index + 1) * fract_len
     return [x1, y1, x3, y3]
     
-layer_thk_list = [5,5,5,5,5,5,5,5,5]
-layer_len_list = [5,5,5,5,5,5,5,5,5]
-layer_density_list = [40,5,40,5,40,5,40,5,40]
+layer_thk_list = [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
+layer_len_list = [5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5,5]
+layer_density_list = [40,5,40,5,40,5,40,5,40,5,40,5,40,5,40,5,40]
 material_base = "PM"
 material_metal = "METAL"
 
