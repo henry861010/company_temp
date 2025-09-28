@@ -1,11 +1,12 @@
 import React, { useMemo, useState, useCallback } from "react";
 import SBTlayerTable, { schema as schema1 } from "./SBTlayerTable";
 import PKGsizeTable, { schema as schema2 } from "./PKGsizeTable";
+import MaterialTable, { schema as schema3 } from "./MaterialTable";
 import ModelActionBlock from "./ModelActionBlock";
 import { deepMergeMissing, combineDefaults } from "../utils/utils";
 
-const all_schema = [schema1, schema2]
-const tables = [PKGsizeTable, SBTlayerTable];
+const all_schema = [schema1, schema2, schema3]
+const tables = [PKGsizeTable, SBTlayerTable, MaterialTable];
 
 // ---------- helpers ----------
 const handleModelSubmit = (payload) => {
@@ -70,7 +71,8 @@ export default function HomePage() {
 
       <ModelActionBlock data={data} setData={setData} onSubmit={handleModelSubmit} />
       <PKGsizeTable key="1" data={data} setData={setData} />
-      <SBTlayerTable key="2" data={data} setData={setData} />
+      <MaterialTable key="2" data={data} setData={setData} />
+      <SBTlayerTable key="3" data={data} setData={setData} />
 
       <pre className="bg-gray-100 p-3 rounded overflow-auto">
         {JSON.stringify(data, null, 2)}
