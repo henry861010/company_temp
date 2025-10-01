@@ -40,39 +40,77 @@ class Region:
         if face_list:
             self.set(face_list, ref_face_list)
                             
-    def set(self, face_list:list=[], ref_face_list:list=[]):
+    def _signed_area2(self, pts):
+        """Twice the signed area. >0: CCW (Cartesian y-up), <0: CW."""
+        s = 0.0
+        n = len(pts)
+        for i in range(n):
+            x1, y1 = pts[i]
+            x2, y2 = pts[(i + 1) % n]
+            s += x1 * y2 - x2 * y1
+        return s
+
+    def _is_clockwise(self, poly):
+        return self._signed_area2(poly) < 0.0  # flip if your y-axis is downward
+
+    def _ensure_orientation(self, pts, want_cw):
+        if len(pts) < 3:
+            return pts
+        a2 = self._signed_area2(pts)
+        is_cw = (a2 < 0.0)
+        if want_cw != is_cw:
+            return pts[::-1]
+        return pts
+
+    def _poly_to_path(self, poly):
+        """
+        Build a closed Path for a single polygon of arbitrary length.
+        Works with Path.make_compound_path(*paths).
+        """
+        n = len(poly)
+        if n < 2:
+            return Path(np.asarray(poly, float))
+        verts = [tuple(p) for p in poly]
+        codes = [Path.MOVETO] + [Path.LINETO] * (n - 1) + [Path.CLOSEPOLY]
+        # CLOSEPOLY needs a dummy vertex; (0,0) is fine and ignored for filling
+        verts = verts + [(0.0, 0.0)]
+        return Path(np.asarray(verts, float), codes)
+    
+    ### publice
+    def set(self, face_list=None, ref_face_list=None):
+        if face_list is None:
+            face_list = []
+        if ref_face_list is None:
+            ref_face_list = []
+
         total_face_list = face_list + ref_face_list
-        
-        ### check the value
+
+        # --- type checking (also fix quotes in f-string) ---
         for face in total_face_list:
-            if face["type"]=="BOX":
+            if face["type"] in ("BOX", "POLYGON"):
                 continue
-            elif face["type"]=="POLYGON":
-                continue
-            else:
-                raise ValueError(f"[Region] the face type {face["type"]} is not supported")
-        
-        ### sort the dim list (assign the 1 is unmeaning, it should to "regist" in the dict)
-        table_x_id = {} ### dim -> id
-        table_y_id = {} ### dim -> id
+            raise ValueError(f'[Region] the face type {face["type"]} is not supported')
+
+        # --- collect x/y breakpoints (unique, sorted) ---
+        table_x_id, table_y_id = {}, {}
         for face in total_face_list:
             if face["type"] == "BOX":
-                table_x_id[face["dim"][0]] = 1
-                table_y_id[face["dim"][1]] = 1
-                table_x_id[face["dim"][2]] = 1
-                table_y_id[face["dim"][3]] = 1
-            elif face["type"] == "POLYGON":
-                for node in face["dim"]:
-                    table_x_id[node[0]] = 1
-                    table_y_id[node[1]] = 1
-        self.cell_num_x = len(table_x_id)-1
-        self.cell_num_y = len(table_y_id)-1
+                x0, y0, x1, y1 = face["dim"]
+                table_x_id[x0] = 1; table_x_id[x1] = 1
+                table_y_id[y0] = 1; table_y_id[y1] = 1
+            else:  # POLYGON
+                for x, y in face["dim"]:
+                    table_x_id[x] = 1
+                    table_y_id[y] = 1
+
+        self.cell_num_x = len(table_x_id) - 1
+        self.cell_num_y = len(table_y_id) - 1
         table_x_id = dict(sorted(table_x_id.items()))
         table_y_id = dict(sorted(table_y_id.items()))
 
-        ### create the table to record the relation between node and dim
-        self.table_x_dim = np.empty(self.cell_num_x+1, np.float32) ### id -> dim
-        self.table_y_dim = np.empty(self.cell_num_y+1, np.float32) ### id -> dim
+        # --- build id <-> coord tables ---
+        self.table_x_dim = np.empty(self.cell_num_x + 1, np.float32)  # id -> x
+        self.table_y_dim = np.empty(self.cell_num_y + 1, np.float32)  # id -> y
         for i, x in enumerate(table_x_id):
             table_x_id[x] = i
             self.table_x_dim[i] = x
@@ -80,29 +118,53 @@ class Region:
             table_y_id[y] = j
             self.table_y_dim[j] = y
 
-        ### create the cell
-        ###     0: nothing
-        ###     1: die
-        ###     2: gap
+        # --- init cell types ---
         self.cell_type = np.zeros((self.cell_num_x, self.cell_num_y), dtype=np.int16)
 
-        ### determine the "die" cell 
+        # --- cell centers ---
         x = np.asarray(self.table_x_dim)
         y = np.asarray(self.table_y_dim)
         cx = 0.5 * (x[:-1] + x[1:])
         cy = 0.5 * (y[:-1] + y[1:])
         CX, CY = np.meshgrid(cx, cy, indexing='ij')
+        points = np.c_[CX.ravel(), CY.ravel()]  # (N,2)
+
+        # === Build die mask with "CW = hull", "CCW = hole" ===
+        die_mask = np.zeros(CX.shape, dtype=bool)
+
+        # 1) BOXes behave as hulls (union)
         for face in face_list:
             if face["type"] == "BOX":
-                index1 = (face["dim"][0] < CX) & (CX < face["dim"][2])
-                index2 = (face["dim"][1] < CY) & (CY < face["dim"][3])
-                self.cell_type[index1 & index2] = TYPE_DIE
-            elif face["type"] == "POLYGON":
-                poly_path = Path(face["dim"])
-                points = np.c_[CX.ravel(), CY.ravel()]
-                index = poly_path.contains_points(points).reshape(CX.shape)
-                self.cell_type[index] = TYPE_DIE
-        
+                x0, y0, x1, y1 = face["dim"]
+                idx = (x0 < CX) & (CX < x1) & (y0 < CY) & (CY < y1)
+                die_mask |= idx
+
+        # 2) Split polygons by orientation
+        hull_paths, hole_paths = [], []
+        for face in face_list:
+            if face["type"] == "POLYGON":
+                poly = face["dim"]
+                if self._is_clockwise(poly):     # CW => hull
+                    hull_paths.append(self._poly_to_path(poly))
+                else:                       # CCW => hole
+                    hole_paths.append(self._poly_to_path(poly))
+
+        # 3) Union all hull polygons
+        if hull_paths:
+            hull_path = Path.make_compound_path(*hull_paths)  # accepts variable-length polys
+            inside_hulls = hull_path.contains_points(points).reshape(CX.shape)
+            die_mask |= inside_hulls
+
+        # 4) Subtract all holes
+        if hole_paths:
+            hole_path = Path.make_compound_path(*hole_paths)
+            inside_holes = hole_path.contains_points(points).reshape(CX.shape)
+            die_mask &= ~inside_holes
+
+        # 5) Commit mask
+        self.cell_type[die_mask] = TYPE_DIE
+    
+    ### set    
     def set_gap(self, gap, target_mask=TYPE_DIE):
         for i in range(0, self.cell_num_x):
             for j in range(0, self.cell_num_y):
@@ -290,24 +352,46 @@ class Region:
                     self.cell_type[i][j] = TYPE_EMPTY
         
     ### get
-    def get_outline(self, target_mask=TYPE_TARGET):
-        dbu=1
+    def get_outline(self, target_mask=TYPE_TARGET, isDetail=False):
+        dbu = 1
         region = pya.Region()
         for i in range(self.cell_num_x):
             for j in range(self.cell_num_y):
                 if self.cell_type[i][j] & target_mask:
-                    x1 = int(self.table_x_dim[i]/dbu)
-                    y1 = int(self.table_y_dim[j]/dbu)
-                    x3 = int(self.table_x_dim[i+1]/dbu)
-                    y3 = int(self.table_y_dim[j+1]/dbu)
+                    x1 = int(self.table_x_dim[i]   / dbu)
+                    y1 = int(self.table_y_dim[j]   / dbu)
+                    x3 = int(self.table_x_dim[i+1] / dbu)
+                    y3 = int(self.table_y_dim[j+1] / dbu)
                     region.insert(pya.Box(x1, y1, x3, y3))
+
         polygon_list = []
-        for poly in region.each_merged():
-            hull = [(node.x*dbu, node.y*dbu) for node in poly.each_point_hull()]
-            holes = []
-            for h in range(poly.holes()):
-                holes.append([(node.x*dbu, node.y*dbu) for node in poly.each_point_hole(h)])
-            polygon_list.append((hull, holes))
+        if isDetail:
+            for poly in region.each_merged():
+                polygon = {
+                    "type": "POLYGON",
+                    "dim": [],
+                    "holes": []
+                }
+    
+                # Hull points (force CW)
+                hull = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hull()]
+                polygon["dim"] = self._ensure_orientation(hull, want_cw=True)
+
+                # Hole points (force CCW)
+                for h in range(poly.holes()):
+                    hole = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hole(h)]
+                    polygon["holes"].append(self._ensure_orientation(hole, want_cw=False))
+                polygon_list.append(polygon)
+        else:
+            for poly in region.each_merged():
+                # Hull points (force CW)
+                hull = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hull()]
+                polygon_list.append(self._ensure_orientation(hull, want_cw=True))
+
+                # Hole points (force CCW)
+                for h in range(poly.holes()):
+                    hole = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hole(h)]
+                    polygon_list.append(self._ensure_orientation(hole, want_cw=False))
         return polygon_list
 
     def get_mesh_blocks(self, mask: int = 2):
@@ -433,39 +517,17 @@ element_size = 1.5*5
 region_obj = Region()
 face1 = {
     "type": "POLYGON",
-    "dim": [[0,0], [10,0], [10,5], [30,5], [30,10],[60,10],[60,15], [30,15],[20,15],[20,20],[15,20],[15, 30],[10,30],[10,15],[0,15]] 
-}
-region_obj.set(face_list=[face1])
-region_obj.set_round(element_size)
-region_obj.show_graph()
-
-### test2
-region_obj = Region()
-face1 = {
-    "type": "POLYGON",
-    "dim": [[0,0],[10,0],[10,10],[30,10],[30,6],[40,6],[40,10],[60,10],[60,20],[40,20],[35,20],[35,25],[30,25],[30,30],[10,30],[10,20],[0,20]] 
-}
-region_obj.set(face_list=[face1])
-region_obj.set_round(element_size)
-region_obj.show_graph()
-
-### test3
-region_obj = Region()
-face1 = {
-    "type": "POLYGON",
-    "dim": [[0,0],[50,0],[50,20],[47,20],[47,10],[10,10],[10,30],[0,30]] 
+    "dim": [[0,0],[0,30],[30,30],[30,0]] 
 }
 face2 = {
     "type": "POLYGON",
-    "dim": [[20,15],[30,15],[30,30],[35,30],[35,40],[20,40]] 
+    "dim": [[10,10],[20,10],[20,20],[10,20]] 
 }
 region_obj.set(face_list=[face1, face2])
-region_obj.set_round(element_size)
 region_obj.show_graph()
 
-outline_list = region_obj.get_outline(target_mask=2)
-for outline in outline_list:
-    hull, holes = outline
+a = region_obj.get_outline(target_mask=TYPE_DIE, isDetail=True)
+print(a)
     
 
     

@@ -340,4 +340,30 @@ def build_section(cdb_obj: 'Mesh2D', element_size, section_list):
 def get_expanding(cdb_obj: 'Mesh2D', outline_list, element_size, pattern_lines_vertical: list, pattern_lines_horizon: list):
     return [element_size for _ in outline_list]
 
-def block_overlap(block_list):
+##################### 25/9/28 #######################
+def get_expand_outline_simple(outline, expanding_list):
+    node_list = []
+    for i in range(len(outline)):
+        pre = (i - 1 + len(outline)) % len(outline)
+        x = outline[i][0][0] + expanding_list[pre][0] + expanding_list[i][0]
+        y = outline[i][0][1] + expanding_list[pre][1] + expanding_list[i][1]
+        node_list.append([x, y])
+    new_outline = []
+    for i in range(len(node_list)):
+        post = (i + 1) % len(node_list)
+        new_outline.append([node_list[i], node_list[post]])
+    return new_outline
+
+def get_new_pattern_line(outline, gap):
+    ### find the gap area (<2*element_size)
+    region_obj = Region()
+    region_obj.set([edge[0] for edge in outline])
+    region_obj.set_gap(gap)
+    gap_polygon = region_obj.get_outline()
+    merge_polygon = region_obj.get_outline(target_mask=1|2)
+    
+    ### identify the new edge and existed edge
+    
+    return new_pattern_vertical, new_pattern_horizon, auto_outline_list
+        
+    
