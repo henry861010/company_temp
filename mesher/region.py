@@ -39,7 +39,8 @@ class Region:
         ### build the basic info
         if face_list:
             self.set(face_list, ref_face_list)
-                            
+         
+    ### inner                   
     def _signed_area2(self, pts):
         """Twice the signed area. >0: CCW (Cartesian y-up), <0: CW."""
         s = 0.0
@@ -76,7 +77,7 @@ class Region:
         verts = verts + [(0.0, 0.0)]
         return Path(np.asarray(verts, float), codes)
     
-    ### publice
+    ### initialize
     def set(self, face_list=None, ref_face_list=None):
         if face_list is None:
             face_list = []
@@ -165,59 +166,75 @@ class Region:
         self.cell_type[die_mask] = TYPE_DIE
     
     ### set    
-    def set_gap(self, gap, target_mask=TYPE_DIE):
-        for i in range(0, self.cell_num_x):
-            for j in range(0, self.cell_num_y):
-                if not self.cell_type[i][j] & target_mask:
-                    ### x-axis
-                    if i>0 and self.cell_type[i-1][j] & target_mask:
-                        right = i + 1
+    def set_gap(self, gap, target_mask=TYPE_DIE, isRecursive=False):
+        time = 0
+        while True:
+            isChange = False
+            for i in range(0, self.cell_num_x):
+                for j in range(0, self.cell_num_y):
+                    if not self.cell_type[i][j] & target_mask:
+                        ### x-axis
+                        if i>0 and self.cell_type[i-1][j] & target_mask:
+                            right = i + 1
+                            while 1:
+                                if right >= self.cell_num_x:
+                                    ### there is no die type at the right
+                                    right = -1
+                                    break
+                                elif self.cell_type[right][j] & target_mask:
+                                    ### find the die
+                                    break
+                                else:
+                                    ### continue to find
+                                    right += 1
+                            if right != -1 and self.table_x_dim[right] - self.table_x_dim[i] <= gap:
+                                ### if there is die at the right cell, set all the empty area to fill
+                                for k in range(i, right):
+                                    self.cell_type[k][j] |= TYPE_TARGET
+                                    isChange = True
+
+                        ### y-axis
+                        if j>0 and self.cell_type[i][j-1] & target_mask:
+                            upper = j + 1
+                            while 1:
+                                if upper >= self.cell_num_y:
+                                    upper = -1
+                                    break
+                                elif self.cell_type[i][upper] & target_mask:
+                                    break
+                                else:
+                                    upper += 1
+                            if upper != -1 and self.table_y_dim[upper] - self.table_y_dim[j] <= gap:
+                                for k in range(j, upper):
+                                    self.cell_type[i][k] |= TYPE_TARGET
+                                    isChange = True
+
+                    ### add the lose one (only in x-axis ???)
+                    if self.cell_type[i][j] & 2:
+                        left = i - 1
                         while 1:
-                            if right >= self.cell_num_x:
-                                ### there is no die type at the right
-                                right = -1
+                            if left<0:
+                                left = -1
                                 break
-                            elif self.cell_type[right][j] & target_mask:
-                                ### find the die
+                            elif self.cell_type[left][j] & target_mask:
+                                left += 1
                                 break
                             else:
-                                ### continue to find
-                                right += 1
-                        if right != -1 and self.table_x_dim[right] - self.table_x_dim[i] <= gap:
-                            ### if there is die at the right cell, set all the empty area to fill
-                            for k in range(i, right):
+                                left -= 1
+                        if left != -1 and self.table_x_dim[i] - self.table_x_dim[left] <= gap:
+                            for k in range(left, i):
                                 self.cell_type[k][j] |= TYPE_TARGET
-
-                    ### y-axis
-                    if j>0 and self.cell_type[i][j-1] & target_mask:
-                        upper = j + 1
-                        while 1:
-                            if upper >= self.cell_num_y:
-                                upper = -1
-                                break
-                            elif self.cell_type[i][upper] & target_mask:
-                                break
-                            else:
-                                upper += 1
-                        if upper != -1 and self.table_y_dim[upper] - self.table_y_dim[j] <= gap:
-                            for k in range(j, upper):
-                                self.cell_type[i][k] |= TYPE_TARGET
-
-                ### add the lose one (only in x-axis ???)
-                if self.cell_type[i][j] & 2:
-                    left = i - 1
-                    while 1:
-                        if left<0:
-                            left = -1
-                            break
-                        elif self.cell_type[left][j] & target_mask:
-                            left += 1
-                            break
-                        else:
-                            left -= 1
-                    if left != -1 and self.table_x_dim[i] - self.table_x_dim[left] <= gap:
-                        for k in range(left, i):
-                            self.cell_type[k][j] |= TYPE_TARGET
+                                isChange = True
+            if not isRecursive:
+                return isChange
+            elif not isChange:
+                break
+            else:
+                time += 1
+        if time == 0:
+            return False
+        else:
+            return True
    
     def set_edge(self, gap):
         INT_MAX = 1000000
@@ -337,14 +354,7 @@ class Region:
             if not isSet:
                 break
         return isChange
-    
-    def set_round(self, gap):
-        while True:
-            self.set_gap(gap*2)
-            isSet = self.set_edge(gap)    
-            if not isSet:
-                break
-    
+        
     def set_clear(self, clear_mask=TYPE_TARGET):
         for i in range(0, self.cell_num_x):
             for j in range(0, self.cell_num_y):
@@ -394,7 +404,7 @@ class Region:
                     polygon_list.append(self._ensure_orientation(hole, want_cw=False))
         return polygon_list
 
-    def get_mesh_blocks(self, mask: int = 2):
+    def get_mesh_blocks(self, mask: int = TYPE_TARGET):
         ### get the mesh block
         mesh_block_list = []
         ceil_table = [self.cell_num_y for _ in self.cell_type]
@@ -510,24 +520,6 @@ class Region:
         plt.ylabel("Y")
 
         plt.show()
-        
-element_size = 1.5*5
 
-### test1
-region_obj = Region()
-face1 = {
-    "type": "POLYGON",
-    "dim": [[0,0],[0,30],[30,30],[30,0]] 
-}
-face2 = {
-    "type": "POLYGON",
-    "dim": [[10,10],[20,10],[20,20],[10,20]] 
-}
-region_obj.set(face_list=[face1, face2])
-region_obj.show_graph()
-
-a = region_obj.get_outline(target_mask=TYPE_DIE, isDetail=True)
-print(a)
-    
 
     
