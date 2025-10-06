@@ -439,7 +439,7 @@ class Region:
                         print("~~~~~~~~~")
                     
                     ### find left wall height (u, if we don't care wall height, the upper would higher than left and right wall)
-                    if i > 1 and not self.cell_type[i-1][j] & mask:
+                    if i > 0 and not self.cell_type[i-1][j] & mask:
                         n = j + 1
                         while n < self.cell_num_y and not self.cell_type[i-1][n] & mask:
                             n += 1
