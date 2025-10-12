@@ -3,6 +3,7 @@ import math
 from matplotlib.path import Path
 import klayout.db as pya
 import matplotlib.pyplot as plt
+from .utils.math import *
 
 TYPE_EMPTY = 0
 TYPE_DIE = 1
@@ -76,6 +77,56 @@ class Region:
         # CLOSEPOLY needs a dummy vertex; (0,0) is fine and ignored for filling
         verts = verts + [(0.0, 0.0)]
         return Path(np.asarray(verts, float), codes)
+
+    def _nodes_to_polygon(self, nodes, dbu=0.001):
+        pts = [pya.Point(int(round(x / dbu)), int(round(y / dbu))) for x, y in nodes]
+        return pya.Polygon(pts)
+    
+    def _set_point_x(self, target_x, esp=0.001):
+        for i, x in enumerate(self.table_x_dim):
+            if f_eq(x, target_x):
+                return
+            elif f_lt(x, target_x):
+                continue
+            else:
+                if i==0:
+                    new_col = np.zeros(self.cell_num_y)
+                else:
+                    new_col = self.cell_type[i-1] 
+                self.cell_type = np.insert(self.cell_type, i, new_col, axis=0)
+                self.table_x_dim = np.insert(self.table_x_dim, i, target_x)
+                self.cell_num_x += 1
+                return 
+        
+        new_col = np.zeros(self.cell_num_y)
+        self.cell_type = np.insert(self.cell_type, self.cell_num_x, new_col, axis=0)
+        self.table_x_dim = np.insert(self.table_x_dim, self.cell_num_x, target_x)
+        self.cell_num_x += 1
+                
+    def _set_point_y(self, target_y, esp=0.001):
+        for i, y in enumerate(self.table_y_dim):
+            if f_eq(y, target_y):
+                return
+            elif f_lt(y, target_y):
+                continue
+            else:
+                if i==0:
+                    new_row = np.zeros(self.cell_num_y)
+                else:
+                    new_row = self.cell_type[:,i-1] 
+                self.cell_type = np.insert(self.cell_type, i, new_row, axis=1)
+                self.table_y_dim = np.insert(self.table_y_dim, i, target_y)
+                self.cell_num_y += 1
+                return 
+        
+        new_row = np.zeros(self.cell_num_x)
+        self.cell_type = np.insert(self.cell_type, self.cell_num_y, new_row, axis=1)
+        self.table_y_dim = np.insert(self.table_y_dim, self.cell_num_y, target_y)
+        self.cell_num_y += 1
+    
+    def _set_point(self, x, y):
+        self._set_point_x(x)
+        self._set_point_y(y)
     
     ### initialize
     def set(self, face_list=None, ref_face_list=None):
@@ -165,8 +216,73 @@ class Region:
         # 5) Commit mask
         self.cell_type[die_mask] = TYPE_DIE
     
-    ### set    
-    def set_gap(self, gap, target_mask=TYPE_DIE, isRecursive=False):
+    ### set basic
+    def set_clear(self, clear_mask=TYPE_TARGET):
+        for i in range(0, self.cell_num_x):
+            for j in range(0, self.cell_num_y):
+                if self.cell_type[i][j] & clear_mask:
+                    self.cell_type[i][j] = TYPE_EMPTY
+        
+    def set_box(self, box, setTo=TYPE_TARGET):
+        ### set the additional point
+        self._set_point(box[0], box[1])
+        self._set_point(box[2], box[1])
+        self._set_point(box[0], box[3])
+        self._set_point(box[2], box[3])
+        
+        ### set the block
+        x = np.asarray(self.table_x_dim)
+        y = np.asarray(self.table_y_dim)
+        cx = 0.5 * (x[:-1] + x[1:])
+        cy = 0.5 * (y[:-1] + y[1:])
+        CX, CY = np.meshgrid(cx, cy, indexing='ij')
+        die_mask = np.zeros(CX.shape, dtype=bool)
+        
+        ### box
+        die_mask = (box[0] < CX) & (CX < box[2]) & (box[1] < CY) & (CY < box[3])
+
+        ### set to 
+        self.cell_type[die_mask] |= setTo
+    
+    def set_polygons(self, polygons, setTo=TYPE_TARGET):
+        # 2) Split polygons by orientation
+        hull_paths, hole_paths = [], []
+        for polygon in polygons:
+            for node in polygon:
+                self._set_point(node[0], node[1])
+            if self._is_clockwise(polygon):
+                hull_paths.append(self._poly_to_path(polygon))
+            else:
+                hole_paths.append(self._poly_to_path(polygon))
+                
+        x = np.asarray(self.table_x_dim)
+        y = np.asarray(self.table_y_dim)
+        cx = 0.5 * (x[:-1] + x[1:])
+        cy = 0.5 * (y[:-1] + y[1:])
+        CX, CY = np.meshgrid(cx, cy, indexing='ij')
+        points = np.c_[CX.ravel(), CY.ravel()]
+
+        die_mask = np.zeros(CX.shape, dtype=bool)
+
+        # 3) Union all hull polygons
+        if hull_paths:
+            hull_path = Path.make_compound_path(*hull_paths)
+            inside_hulls = hull_path.contains_points(points).reshape(CX.shape)
+            die_mask |= inside_hulls
+
+        # 4) Subtract all holes
+        if hole_paths:
+            hole_path = Path.make_compound_path(*hole_paths)
+            inside_holes = hole_path.contains_points(points).reshape(CX.shape)
+            die_mask &= ~inside_holes
+
+        # 5) Commit mask
+        self.cell_type[die_mask] |= setTo
+        
+        return 
+    
+    ### set 
+    def set_gap(self, gap, setTo=TYPE_TARGET, target_mask=TYPE_DIE, isRecursive=False):
         time = 0
         while True:
             isChange = False
@@ -236,8 +352,9 @@ class Region:
         else:
             return True
    
-    def set_edge(self, gap):
+    def set_edge(self, gap, setTo=TYPE_TARGET, target_mask=TYPE_DIE|TYPE_TARGET):
         INT_MAX = 1000000
+        
         def vertical(left, right, j):
             if left == -1:
                 return j, j, INT_MAX
@@ -291,7 +408,6 @@ class Region:
                 left -= 1
             return left, right, self.table_x_dim[right]-self.table_x_dim[left+1]
         
-        target_mask = TYPE_DIE | TYPE_TARGET
         isChange = False
         while True:
             isSet = False
@@ -309,7 +425,7 @@ class Region:
                                 while index < right:
                                     isSet = True
                                     isChange = True
-                                    self.cell_type[index,bottom+1:top] |= TYPE_TARGET
+                                    self.cell_type[index,bottom+1:top] |= setTo
                                     index += 1
                         ### go left
                         if 0 <= i-1 and not self.cell_type[i-1][j] & target_mask:
@@ -322,7 +438,7 @@ class Region:
                                 while left < index:
                                     isSet = True
                                     isChange = True
-                                    self.cell_type[index,bottom+1:top] |= TYPE_TARGET
+                                    self.cell_type[index,bottom+1:top] |= setTo
                                     index -= 1
                         ### go top
                         if j+1 < self.cell_num_y and not self.cell_type[i][j+1] & target_mask:
@@ -335,7 +451,7 @@ class Region:
                                 while index < top:
                                     isSet = True
                                     isChange = True
-                                    self.cell_type[left+1:right,index] |= TYPE_TARGET
+                                    self.cell_type[left+1:right,index] |= setTo
                                     index += 1
                         ### go bottom
                         if 0 <= j-1 and not self.cell_type[i][j-1] & target_mask:
@@ -348,18 +464,58 @@ class Region:
                                 while bottom < index:
                                     isSet = True
                                     isChange = True
-                                    self.cell_type[left+1:right,index] |= TYPE_TARGET
+                                    self.cell_type[left+1:right,index] |= setTo
                                     index -= 1
-
             if not isSet:
                 break
         return isChange
         
-    def set_clear(self, clear_mask=TYPE_TARGET):
-        for i in range(0, self.cell_num_x):
-            for j in range(0, self.cell_num_y):
-                if self.cell_type[i][j] & clear_mask:
-                    self.cell_type[i][j] = TYPE_EMPTY
+    def set_round(self, gap, setTo=TYPE_TARGET):
+        print("~~~")
+      
+    def set_by_region(self, type, target_mask1, region2:'Region', target_mask2, setTo=TYPE_TARGET): 
+        '''
+            type: "OR", "AND", "XOR"
+        ''' 
+        def get_region_from_outline(outlines):
+            reg = pya.Region()
+            for outline in outlines:
+                if len(outline) < 3:
+                    continue
+                poly = self._nodes_to_polygon(outline)
+                if self._is_clockwise(outline):
+                    reg += poly
+                else:
+                    reg -= poly
+            return reg
+
+            
+        outlines1 = self.get_outline(target_mask1)
+        reg1 = get_region_from_outline(outlines1)
+        
+        outlines2 = region2.get_outline(target_mask2)
+        reg2 = get_region_from_outline(outlines2)
+        
+        if type == "AND":
+            reg_and = reg1 & reg2 
+        elif type == "OR":
+            reg_and = reg1 | reg2
+        else:
+            raise ValueError("unKnow type")
+        
+        polygon_list = []
+        dbu = 0.001
+        for poly in reg_and.each_merged():
+            # Hull points (force CW)
+            hull = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hull()]
+            polygon_list.append(self._ensure_orientation(hull, want_cw=True))
+
+            # Hole points (force CCW)
+            for h in range(poly.holes()):
+                hole = [[node.x * dbu, node.y * dbu] for node in poly.each_point_hole(h)]
+                polygon_list.append(self._ensure_orientation(hole, want_cw=False))
+                
+        self.set_polygons(polygon_list, setTo=setTo)
         
     ### get
     def get_outline(self, target_mask=TYPE_TARGET, isDetail=False):
@@ -404,7 +560,7 @@ class Region:
                     polygon_list.append(self._ensure_orientation(hole, want_cw=False))
         return polygon_list
 
-    def get_mesh_blocks(self, mask: int = TYPE_TARGET):
+    def get_mesh_blocks(self, mask:int=TYPE_TARGET):
         ### get the mesh block
         mesh_block_list = []
         ceil_table = [self.cell_num_y for _ in self.cell_type]
@@ -492,18 +648,24 @@ class Region:
                     print("")
         return mesh_block_list
 
-    def get_mesh_meshmodel2(self, element_size: float, expanding_num: float, gap: float = 500, ifFixSize: bool = True):
+    def get_mesh_meshmodel2(self, element_size:float, expanding_num:float, gap:float=500, ifFixSize:bool=True):
         x_list = []
         y_list = []
         return (x_list, y_list)
     
     ### debug
-    def show_graph(self, x_list: list = [], y_list: list = []):
+    def show_graph(self, x_list: list=[], y_list: list=[], target_masks=None):
         cell_array = np.array(self.cell_type, copy=True)
         X, Y = np.meshgrid(self.table_x_dim, self.table_y_dim)
 
         cmap = plt.get_cmap('tab10')
-        cell_array[(cell_array & 2)!=0] = 2
+        if target_masks: 
+            die_mask = np.zeros((self.cell_num_x, self.cell_num_y), dtype=bool)
+            for i, target_mask in enumerate(target_masks):
+                idx = (self.cell_type & target_mask) != 0
+                cell_array[idx] = i
+                die_mask |= idx
+            cell_array[~die_mask] = len(target_masks)
         plt.pcolormesh(X, Y, cell_array.T, cmap=cmap, edgecolors='k', shading='flat')
         
         # Add vertical lines
