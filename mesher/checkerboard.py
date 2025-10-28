@@ -1,3 +1,5 @@
+import numpy as np
+
 def _checkerboard_box(element_size, x_list, y_list):
     ### validate element_size
     if not np.isscalar(element_size) or float(element_size) <= 0:
@@ -58,121 +60,122 @@ def _checkerboard_box(element_size, x_list, y_list):
     
     return nodes, elements
 
-def _circle_distance(center_x, center_y, R, nodes, eps=1e-15):
-    """
-    nodes: (N,2)
-    Returns:
-      d_abs: (N,)  | ||p-c|| - R |
-      d_signed: (N,)  ||p-c|| - R   (neg inside, pos outside)
-      close_node: (N,2) closest points on the circle
-      unit_normal: (N,2) outward unit normals at close_node
-    """
-    nodes = np.asarray(nodes, dtype=float)
-    c = np.array([center_x, center_y], dtype=float)
+def _checkerboard_cylinder(element_size, dim, x_list, y_list, tol=1e-9):
+    def _circle_distance(center_x, center_y, R, nodes, eps=1e-15):
+        """
+        nodes: (N,2)
+        Returns:
+        d_abs: (N,)  | ||p-c|| - R |
+        d_signed: (N,)  ||p-c|| - R   (neg inside, pos outside)
+        close_node: (N,2) closest points on the circle
+        unit_normal: (N,2) outward unit normals at close_node
+        """
+        nodes = np.asarray(nodes, dtype=float)
+        c = np.array([center_x, center_y, 0], dtype=float)
 
-    v = nodes - c                # (N,2)
-    r = np.linalg.norm(v, axis=1)
-    d_signed = r - R
-    d_abs = np.abs(d_signed)
+        v = nodes - c                # (N,2)
+        r = np.linalg.norm(v, axis=1)
+        d_signed = r - R
+        d_abs = np.abs(d_signed)
 
-    inv_r = 1.0 / np.maximum(r, eps)
-    unit_normal = (v.T * inv_r).T    # (N,2)
-    close_node = c + unit_normal * R # (N,2)
-    return d_abs, d_signed, close_node, unit_normal
+        inv_r = 1.0 / np.maximum(r, eps)
+        unit_normal = (v.T * inv_r).T    # (N,2)
+        close_node = c + unit_normal * R # (N,2)
+        return d_abs, d_signed, close_node, unit_normal
 
-def _segment_circle_intersections(c, r, p1, p2, eps=1e-12):
-    """
-    Return intersection points between segment p1->p2 and circle (c, r).
-    Each returned point lies on the segment (0<=t<=1). Dedup handled by caller.
-    """
-    p1 = np.asarray(p1, dtype=float)
-    p2 = np.asarray(p2, dtype=float)
-    c = np.asarray(c, dtype=float)
-    d = p2 - p1
-    f = p1 - c
+    def _segment_circle_intersections(c, r, p1, p2, eps=1e-12):
+        """
+        Return intersection points between segment p1->p2 and circle (c, r).
+        Each returned point lies on the segment (0<=t<=1). Dedup handled by caller.
+        """
+        p1 = np.asarray(p1, dtype=float)
+        p2 = np.asarray(p2, dtype=float)
+        c = np.asarray(c, dtype=float)
+        d = p2 - p1
+        f = p1 - c
 
-    a = np.dot(d, d)
-    b = 2.0 * np.dot(d, f)
-    cc = np.dot(f, f) - r*r
-    if a < eps:
-        return []  # degenerate segment
+        a = np.dot(d, d)
+        b = 2.0 * np.dot(d, f)
+        cc = np.dot(f, f) - r*r
+        if a < eps:
+            return []  # degenerate segment
 
-    disc = b*b - 4*a*cc
-    out = []
-    if disc < -eps:
+        disc = b*b - 4*a*cc
+        out = []
+        if disc < -eps:
+            return out
+        elif abs(disc) <= eps:
+            t = -b / (2*a)
+            if -eps <= t <= 1+eps:
+                out.append(p1 + t*d)
+        else:
+            sqrt_disc = np.sqrt(disc)
+            t1 = (-b - sqrt_disc) / (2*a)
+            t2 = (-b + sqrt_disc) / (2*a)
+            if -eps <= t1 <= 1+eps:
+                out.append(p1 + t1*d)
+            if -eps <= t2 <= 1+eps:
+                out.append(p1 + t2*d)
         return out
-    elif abs(disc) <= eps:
-        t = -b / (2*a)
-        if -eps <= t <= 1+eps:
-            out.append(p1 + t*d)
-    else:
-        sqrt_disc = np.sqrt(disc)
-        t1 = (-b - sqrt_disc) / (2*a)
-        t2 = (-b + sqrt_disc) / (2*a)
-        if -eps <= t1 <= 1+eps:
-            out.append(p1 + t1*d)
-        if -eps <= t2 <= 1+eps:
-            out.append(p1 + t2*d)
-    return out
 
-def _inside_or_on_circle(pt, c, r, eps=1e-12):
-    return np.dot(pt - c, pt - c) <= r*r + eps
+    def _inside_or_on_circle(pt, c, r, eps=1e-12):
+        return np.dot(pt - c, pt - c) <= r*r + eps
 
-def _unique_points(points, eps=1e-9):
-    """Deduplicate by Euclidean distance within eps; preserves order."""
-    uniq = []
-    for p in points:
-        if not any(np.linalg.norm(p - q) <= eps for q in uniq):
-            uniq.append(p)
-    return uniq
+    def _unique_points(points, eps=1e-9):
+        """Deduplicate by Euclidean distance within eps; preserves order."""
+        uniq = []
+        for p in points:
+            if not any(np.linalg.norm(p - q) <= eps for q in uniq):
+                uniq.append(p)
+        return uniq
 
-def _star_and_other_inners(center_x, center_y, r, quad_xy, eps=1e-12):
-    """
-    quad_xy: shape (4,2) array-like, vertices in polygon order.
-    Returns:
-        star_idx: int in [0..3]
-        star_node: (2,) np.array
-        other_inners: list of (2,) np.array points inside/on circle or intersections,
-                      excluding star_node, sorted clockwise about center.
-    """
-    quad = np.asarray(quad_xy, dtype=float).reshape(4, 2)
-    c = np.array([center_x, center_y], dtype=float)
+    def _star_and_other_inners(center_x, center_y, r, quad_xy, eps=1e-12):
+        """
+        quad_xy: shape (4,3) array-like, vertices in polygon order.
+        Returns:
+            star_idx: int in [0..3]
+            star_node: (2,) np.array
+            other_inners: list of (2,) np.array points inside/on circle or intersections,
+                        excluding star_node, sorted clockwise about center.
+        """
+        quad = np.asarray(quad_xy, dtype=float).reshape(4, 3)
+        c = np.array([center_x, center_y, 0], dtype=float)
 
-    # 1) star = nearest vertex to center
-    dists = np.linalg.norm(quad - c, axis=1)
-    star_idx = int(np.argmin(dists))
-    star_node = quad[star_idx]
+        # 1) star = nearest vertex to center
+        dists = np.linalg.norm(quad - c, axis=1)
+        star_idx = int(np.argmin(dists))
+        star_node = quad[star_idx]
 
-    # 2) collect candidate inner points (vertices inside/on circle, NOT including star yet)
-    candidates = []
-    for i in range(4):
-        if _inside_or_on_circle(quad[i], c, r, eps):
-            candidates.append(quad[i])
+        # 2) collect candidate inner points (vertices inside/on circle, NOT including star yet)
+        candidates = []
+        for i in range(4):
+            if _inside_or_on_circle(quad[i], c, r, eps):
+                candidates.append(quad[i])
 
-    # 3) add circle-segment intersections (on edges)
-    for i in range(4):
-        j = (i + 1) % 4
-        inters = _segment_circle_intersections(c, r, quad[i], quad[j], eps=eps)
-        candidates.extend(inters)
+        # 3) add circle-segment intersections (on edges)
+        for i in range(4):
+            j = (i + 1) % 4
+            inters = _segment_circle_intersections(c, r, quad[i], quad[j], eps=eps)
+            candidates.extend(inters)
 
-    # 4) dedup
-    candidates = _unique_points([np.asarray(p, float) for p in candidates], eps=max(1e-9, 10*eps))
+        # 4) dedup
+        candidates = _unique_points([np.asarray(p, float) for p in candidates], eps=max(1e-9, 10*eps))
 
-    # 5) exclude the star node (by proximity)
-    other = [p for p in candidates if np.linalg.norm(p - star_node) > max(1e-9, 10*eps)]
+        # 5) exclude the star node (by proximity)
+        other = [p for p in candidates if np.linalg.norm(p - star_node) > max(1e-9, 10*eps)]
 
-    # 6) sort clockwise about center (angle decreasing)
-    def angle(p):
-        v = p - c
-        return np.arctan2(v[1], v[0])
-    other_sorted = sorted(other, key=angle, reverse=True)
+        # 6) sort clockwise about center (angle decreasing)
+        def angle(p):
+            v = p - c
+            return np.arctan2(v[1], v[0])
+        other_sorted = sorted(other, key=angle, reverse=True)
+        other_sorted = np.array(other_sorted)
 
-    return star_node, other_sorted
+        return star_node, other_sorted
 
-def _checkerboard_center_cylinder(element_size, dim, x_list, y_list, tol=1e-9):
     nodes, elements = _checkerboard_box(element_size, x_list, y_list)
 
-    center_x, center_y, r = dim
+    center_x, center_y, R = dim
     R2 = (R + tol) ** 2
 
     ### find the inner/boundary elements
@@ -185,15 +188,14 @@ def _checkerboard_center_cylinder(element_size, dim, x_list, y_list, tol=1e-9):
     inner_mask = inside4.all(axis=1)      # all four inside
     inside_any = inside4.any(axis=1)      # at least one inside
     boundary_mask = inside_any & (~inner_mask)
-    boundary_elements = elements[boundary_mask]
 
     ### Only consider nodes that belong to boundary elements
+    boundary_elements = elements[boundary_mask]
     b_nodes = np.unique(boundary_elements.ravel())   # (Nb,)
 
-    ### Threshold band (tune): e.g., 5% of element size
+    ### move the node of small one
     snap_thresh = 0.05 * element_size
-
-    dist_abs, _, close_pts, _ = _circle_distance(center_x, center_y, r, nodes[b_nodes])
+    dist_abs, _, close_pts, _ = _circle_distance(center_x, center_y, R, nodes[b_nodes])
     snap_mask = dist_abs < snap_thresh
     nodes[b_nodes[snap_mask]] = close_pts[snap_mask]
     
@@ -203,17 +205,17 @@ def _checkerboard_center_cylinder(element_size, dim, x_list, y_list, tol=1e-9):
     mapping = -np.ones(len(nodes), dtype=np.int32)
     mapping[used_nodes] = np.arange(len(used_nodes))
     elements = mapping[elements]
+    nodes_o = nodes
     nodes = nodes[used_nodes]
 
     ### mesh
     for element in boundary_elements:
-        star_node, other_inners = _star_and_other_inners(center_x, center_y, r, element)
-        
-        star_node_index = len(nodes)
-        nodes.append(star_node)
-        nodes.append(other_inners[0])
-        for inner in other_inners[1:]:
-            nodes.append(inner)
-            elements.append([star_node_index, len(nodes)-1, len(nodes)])
-            
+        star_node, other_inners = _star_and_other_inners(center_x, center_y, R, nodes_o[element])
+        if len(other_inners):
+            nodes = np.vstack([nodes, star_node])
+            star_node_index = len(nodes)-1
+            nodes = np.vstack([nodes, other_inners[0]])
+            for i, inner in enumerate(other_inners[1:]):
+                nodes = np.vstack([nodes, inner])
+                elements = np.vstack([elements, [star_node_index, len(nodes)-2, len(nodes)-1, len(nodes)-1]])
     return nodes, elements
