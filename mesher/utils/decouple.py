@@ -49,3 +49,4 @@ def decouple(nodes, elements, z, dim, eps=1e-6):
     nodes = np.vstack([nodes, new_nodes])
 
     return nodes, elements, bottom_idx, upper_idx
+
