@@ -3,7 +3,7 @@ import math
 from matplotlib.path import Path
 import klayout.db as pya
 import matplotlib.pyplot as plt
-from .utils.math import *
+from utils.math import *
 
 TYPE_EMPTY = 0
 TYPE_DIE = 1
@@ -127,7 +127,7 @@ class Region:
     def _set_point(self, x, y):
         self._set_point_x(x)
         self._set_point_y(y)
-    
+        
     ### initialize
     def set(self, face_list=None, ref_face_list=None):
         if face_list is None:
@@ -639,13 +639,6 @@ class Region:
                             x_list.append(self.table_x_dim[m])
                             
                     ### build the block 
-                    mesh_block_list.append([x_list, y_list])
-                    print(f"{i} - {right}")
-                    print(f"{j} - {upper}")
-                    print(reference_node)
-                    print(ceil_table)
-                    print(x_list)
-                    print("")
         return mesh_block_list
 
     def get_mesh_meshmodel2(self, element_size:float, expanding_num:float, gap:float=500, ifFixSize:bool=True):
@@ -683,5 +676,37 @@ class Region:
 
         plt.show()
 
-
     
+    def get_mesh_blocks_full(self, element_size, mask:int=TYPE_TARGET):
+        visited = np.array([[False] * len(row) for row in self.cell_type])
+        blocks = []
+        for j in range(0, self.cell_num_y):
+            for i in range(0, self.cell_num_x):
+                if self.cell_type[i][j] & mask and not visited[i][j]:
+                    ### find the right
+                    right = i + 1
+                    while right < self.cell_num_x and self.cell_type[right][j]:
+                        right += 1
+                        
+                    ### find the upper
+                    upper = j + 1
+                    while True:
+                        if upper == self.cell_num_y:
+                            break
+                        if not np.all(self.cell_type[upper][i:right]&mask):
+                            break
+                        if i > 0 or self.cell_type[i-1][upper] & mask:
+                            break
+                        if i < self.cell_num_x - 1 or self.cell_type[i+1][upper] & mask:
+                            break
+                        upper += 1
+                        
+                    ### set to visited
+                    visited[i:right,j:upper] = True
+                        
+                    ### append the block
+                    blocks.append([
+                        self.table_x_dim[i:right+1].tolist(),
+                        self.table_x_dim[j:upper+1].tolist()
+                    ])
+        return blocks
