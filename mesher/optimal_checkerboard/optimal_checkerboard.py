@@ -27,25 +27,7 @@ def _slant_horizontal(nodes: np.ndarray, indices: np.ndarray, y_from: float, y_t
 
 # ---------- geometry primitives ----------
 
-def _angle_between_dirs_deg(v1: np.ndarray, v2: np.ndarray, eps: float = 1e-15) -> float:
-    v1 = np.asarray(v1, float)[:2]
-    v2 = np.asarray(v2, float)[:2]
-    n1, n2 = np.linalg.norm(v1), np.linalg.norm(v2)
-    if n1 < eps or n2 < eps:
-        return np.inf
-    u1, u2 = v1 / n1, v2 / n2
-    c = float(np.clip(abs(np.dot(u1, u2)), -1.0, 1.0))
-    return float(np.degrees(np.arccos(c)))
-
-def _perp_distance_point_to_line(p: np.ndarray, p0: np.ndarray, v: np.ndarray, eps: float = 1e-15) -> float:
-    v = np.asarray(v, float)[:2]
-    if np.linalg.norm(v) < eps:
-        return np.inf
-    w = np.asarray(p, float)[:2] - np.asarray(p0, float)[:2]
-    cross_mag = v[0]*w[1] - v[1]*w[0]
-    return abs(cross_mag) / max(np.linalg.norm(v), eps)
-
-def _is_dependent(line1: Tuple[np.ndarray, np.ndarray],
+def _is_dependent(line1: Tuple[npndarray, np.ndarray],
                   line2: Tuple[np.ndarray, np.ndarray],
                   criteria_dis: float,
                   criteria_angle: float) -> Tuple[bool, float, float]:
@@ -53,11 +35,7 @@ def _is_dependent(line1: Tuple[np.ndarray, np.ndarray],
     p2 = np.asarray(line1[1], float)[:2]
     p3 = np.asarray(line2[0], float)[:2]
     p4 = np.asarray(line2[1], float)[:2]
-    v1 = p2 - p1
-    v2 = p4 - p3
-    angle_deg = _angle_between_dirs_deg(v1, v2)
-    dist = _perp_distance_point_to_line(p3, p1, v1)
-    return (angle_deg <= criteria_angle) and (dist <= criteria_dis), angle_deg, dist
+    s
 
 
 # ---------- clustering of parallel lines into dependent bands ----------
@@ -100,20 +78,60 @@ def cluster_parallel_lines(
         L = sorted_lines[i]
         v = sorted_dirs[i]
         ang = _angle_between_dirs_deg(ref_dir, v)
-
         if ang <= max(criteria_angle, angle_eps):
-            # check dependency against ANY line in the current cluster
-            dep_any = any(_is_dependent(last, L, criteria_dis, criteria_angle)[0]
-                        for last in current_cluster)
-            if dep_any:
+            last = current_cluster[-1]
+            dep, _, _ = _is_dependent(last, L, criteria_dis, criteria_angle)
+            if dep:
                 current_cluster.append(L)
-                ref_dir = v               # optional: or keep original ref_dir
-                continue                  # go to next i
-
-        # not dependent (angle too large or distance too big): start new cluster
+                ref_dir = v
+                continue
         clusters.append(current_cluster)
         current_cluster = [L]
         ref_dir = v
 
     clusters.append(current_cluster)
+    return clusters
+
+
+# ---------- dict view (merged as requested) ----------
+
+def clusters_to_dict(
+    clusters: List[List[Tuple[np.ndarray, np.ndarray]]],
+    is_vertical: bool,
+    key_round: Optional[int] = None
+) -> Dict[float, List[Tuple[np.ndarray, np.ndarray]]]:
+    """
+    Convert clusters into a dict keyed by the first line’s primary coord.
+    Optionally round the key to 'key_round' decimals to stabilize float keys.
+    """
+    out: Dict[float, List[Tuple[np.ndarray, np.ndarray]]] = {}
+    for cluster in clusters:
+        key = _line_primary_coord(cluster[0], is_vertical)
+        if key_round is not None:
+            key = round(key, key_round)
+        out[key] = cluster
+    return out
+
+
+# ---------- convenience wrapper: clusters OR dict ----------
+
+def cluster_parallel_lines_dict(
+    pattern_list: Iterable[Tuple[np.ndarray, np.ndarray]],
+    is_vertical: bool,
+    criteria_dis: float,
+    criteria_angle: float,
+    angle_eps: float = 1e-7,
+    key_round: Optional[int] = None,
+    return_dict: bool = True,
+) -> Union[Dict[float, List[Tuple[np.ndarray, np.ndarray]]],
+           List[List[Tuple[np.ndarray, np.ndarray]]]]:
+    """
+    One-call convenience: cluster lines, and (by default) return a dict keyed by
+    the first line’s primary coordinate. Set return_dict=False to get the clusters list.
+    """
+    clusters = cluster_parallel_lines(
+        pattern_list, is_vertical, criteria_dis, criteria_angle, angle_eps
+    )
+    if return_dict:
+        return clusters_to_dict(clusters, is_vertical, key_round=key_round)
     return clusters
