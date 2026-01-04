@@ -46,7 +46,7 @@ class Plane:
         self.normal = temp[:3]
         self.d = temp[3]
 
-    # get
+    # get property
     def get_polygons(self):
         if self.polygons is None:
             raise ValueError("polygons is not setted")
@@ -133,11 +133,20 @@ class Plane:
                     intersection_points.append(pt)
                 
         # Clean duplicates and return the segment
-        if len(intersection_points) >= 2:
-            # Sort or unique points might be needed here depending on precision
-            return np.unique(np.array(intersection_points).round(decimals=6), axis=0)
-        return None
-
+        if len(intersection_points) < 2:
+            return []
+        else:
+            points = np.unique(np.array(intersection_points).round(decimals=6), axis=0)
+            
+            indices = points[:, 0].argsort()
+            points = points[indices]
+            
+            intersections = []
+            for i in range(len(points), 2):
+                intersections.append(np.array([points[i], points[i+1]]))
+                
+            return intersections
+        
     def is_normal(self):
         if (plane[1]==0 and plane[2]==0):
             return True
@@ -146,6 +155,62 @@ class Plane:
         if plane[0]==0 and plane[1]==0:
             return True
         return False
+
+    def get_area(self):
+        if self.polygons is None:
+            raise ValueError("polygons is not setted")
+        
+        def _is_clockwise(polygon, reference_normal):
+            """
+            Identifies if a 3D polygon is CW or CCW relative to a reference normal.
+            
+            Formula:
+            1. Area Vector: A_vec = 0.5 * sum(P_i x P_{i+1})
+            2. Alignment: dot_product = A_vec ⋅ reference_normal
+            """
+            # Calculate the Area Vector (Right-Hand Rule)
+            # A_vec = 0.5 * Σ (P_i × P_{i+1})
+            cross_products = np.cross(polygon, np.roll(polygon, -1, axis=0))
+            area_vector = 0.5 * np.sum(cross_products, axis=0)
+            
+            # Dot product tells us if area_vector aligns with reference_normal
+            dot_product = np.dot(area_vector, reference_normal)
+            
+            if dot_product > 0:
+                return False
+            else:
+                return True
+
+        def _area(polygon, reference_normal):
+            """
+            Calculates the signed area of a 3D polygon.
+            
+            Mathematical Formula:
+            1. Area Vector: A_vec = 0.5 * sum(P_i x P_{i+1})
+            2. Signed Area: Area = A_vec ⋅ n_ref
+            """
+            if len(polygon) < 3:
+                    return 0.0
+                
+            # Sum the cross products of adjacent polygon
+            # np.roll shifts the array to align P_i with P_{i+1}
+            cross_products = np.cross(polygon, np.roll(polygon, -1, axis=0))
+            
+            # The area vector is half the sum of these cross products
+            area_vector = 0.5 * np.sum(cross_products, axis=0)
+            
+            # The scalar area is the magnitude (norm) of the area vector
+            return np.linalg.norm(area_vector)
+        
+        area = 0
+        for polygon in self.polygons:
+            if _is_clockwise(polygon, self.normal)
+                area += _area(polygon, self.normal)
+            else:
+                area -= _area(polygon, self.normal)
+        
+        return area
+
 '''
     this function funtion group the elements where the element in the same planes 
     are in the same groupm and it would return the list of the Plane obj

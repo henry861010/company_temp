@@ -1,5 +1,5 @@
 import numpy as np
-from utils.plane import get_planes
+from utils.plane import Plane, get_planes
 
 def get_intersect(line1, line2, eps=0.01):
     """
@@ -49,6 +49,7 @@ def decorner(nodes, elements, elements_size, filter="NORMAL"):
                 plane_objs_n.append(plane_obj)
     
     # find the outline of each plane
+    new_plane_objs = []
     for plane1_obj in plane_objs:
         interections = []
         
@@ -79,10 +80,15 @@ def decorner(nodes, elements, elements_size, filter="NORMAL"):
                     intersections.pop(index)
                     isSet = True
                     break
-                
             if not isSet:
                 intersections = intersections[:-1]
                 new_polygons.append(new_polygon)
                 new_polygon = []
-        if new_polygon:
-            new_polygons.append(new_polygon)
+        
+        # add plane
+        a, b, c = plane1_obj.get_normal()
+        d= plane1_obj.get_d()
+        new_plane_objs.append(Plane(a=a, b=b, c=c, d=d, polygons=new_polygons))
+        
+    return new_plane_objs
+        
