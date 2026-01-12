@@ -4,7 +4,6 @@ from mesher.mesh2D import Mesh2D
 def mesh_plane(plane:'Plane', x_list=[], y_list=[], z_list=[]):
     if plane.normal[0] == 0 and plane.normal[1] == 0:
         indices = np.array([0, 1, 2])
-        
         a_list = x_list
         b_list = y_list
     elif plane.normal[0] == 0 and plane.normal[2] == 0:
