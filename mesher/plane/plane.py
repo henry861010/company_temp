@@ -12,10 +12,10 @@ def build_even_mesh_structure(polygon_objs):
     plane_to_edges = []     # List of edge indices for each plane
     edge_hash = {}          # Dictionary for O(1) lookup
 
-    def get_edge_key(p1, p2):
+    def get_edge_key(p1, p2, eps=6):
         # Round to handle floating point precision and sort for order-invariance
-        p1_t = tuple(np.round(p1, 6))
-        p2_t = tuple(np.round(p2, 6))
+        p1_t = tuple(np.round(p1, eps))
+        p2_t = tuple(np.round(p2, eps))
         return tuple(sorted((p1_t, p2_t)))
 
     for p_idx, poly in enumerate(polygon_objs):
