@@ -1,0 +1,2 @@
+https://www.klayout.de/doc/code/class_Image.html
+https://www.klayout.de/forum/discussion/2413/can-i-save-a-huge-image-gds-as-png-in-python-script
