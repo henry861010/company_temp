@@ -1,0 +1,50 @@
+OOP Framework
+Key Message
+1. eRD已經全面替換成Python
+2. Framework Status: calability & usability
+3. My 2026 Plane
+
+# 替換成Python進度 (Achieve 90%???)
+過去我們知道相比於HyperMesh，Python有以下好處：（強調HyperMesh不好所以粗要發展這些...）
+1. 不需要license
+2. 更快
+3. 開發者對mesh有更高的操作自由度
+4. 對環境依賴性較低
+在上次與樹哥報時，已經在SoW (千萬等級模型)證明Python能力，但基於以下原因並沒有全面導入:
+1. 只有基礎Mesh功能(drag)但缺乏更進階功能，例如：contact, 設定elem/node set, normal… -> 無法使用到CoWoS-L Warp/Stress/ADH model
+2. 需要驗證同時在大改版時替換以免為mesh或metal density issue造成過去report無法對上 -> CoWoS-L wafer warp
+這段時間把這些功能完善同時進行了模型驗證，目前eRD production上”主要使用到“model都已經轉換成python版本
+[table] Building time / develop time
+1. eRD: 
+    1. CoWoS-L Warp/Stress/ADH/Wafer
+    2. CoWoS-S Warp/Stress -> 沒什麼人用
+    3. InFo -> 絕種？
+    4. CoW-R Warp
+    5. SoIC-mf
+2. Toolkit
+    1. SBT Polish (normal可以講一下？)
+    2. CoW-R stress
+    3. CoWoS-L wafer fs/bs loop
+
+# scalability & usability
+值得提到的一點是scalability & usability。隨著section04擴張，我們也越來越多AR接近來。OOP framework很大的設計目標就是讓物件重複使用同時快入開發。因此這段時間OOP也嘗試將framework 推廣給更多使用者 以及 讓API更容易使用
+(強調好用性 癮癮帶出廣度～)
+1. CoW-R (OOP架構使用 部分重複物件的reuse)
+2. SoIC-mh pkg warp/wafer warp (OOP架構使用 部分重複物件的reuse)
+3. SoIC-mh pkg wafer warp (OOP架構提供更高自由度讓使用者自行mesh)
+4. SoIC ??? (OOP架構使用 部分重複物件的reuse)
+5. CoWoS-L 建庭？？？ (OOP架構使用)
+6. CoWoS-L 2pic lid (OOP架構使用)
+7. CoWoS-L TL-ring (mesh algorithm wrap ～ 一張圖OOP vs 底層)
+此外，雖然framework提供feature已經可以滿足大部分情境，但仍然需要一些特殊feature需要我從底層修改或新增程式，這也讓我在過去1Q中花費大部分時間在協助使用者一起完成他們project (stress mapping, CAD to Lid, SoIC-mh)。這讓我成為Bottelneck，因此我也開始offload一些更底層開發工作給其他同事，同時也確保framework maintain，例如：
+1. CoWoS-L TL-ring contact
+2. Provide plug-in interface
+
+# My 2026 Plane
+OOP Framework大部分需要功能都已經完成，在目前2.5D使用情境下我認爲已經開發差不多(圖：geometry-mesh-basic/algorithm) 
+1. 不過Python kernel目前運行不到1Q，仍有不小effort在修bug -> 這將會持續進行同時新增unit test
+而針對2D mesh或是跳脫2.5D的3D mesh目前在技術上仍有很大瓶頸，且預期會花很長時間(一年 以上)來完成，同時考量到部門中還有多更急更重要的AR需要資源完成，因此接下來對OOP framwork開發會告一段落，轉向協助section03完成更多auotmation
+目前：
+1. 初步我看到：Section03相比其他section有更多會寫程式人才，但在程式維護性及使用性等方面比較不足，造成程式雜亂且使用起來繁瑣 -> 我覺得接下來很大發力點第一步是先改善flow讓程式更自動化
+2. GDS effective-k
+3. 參加section03 weekly -> 尋找更多機會
